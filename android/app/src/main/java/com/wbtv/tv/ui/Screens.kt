@@ -384,6 +384,7 @@ private fun SettingsScreen(vm: AppVm, t: WbtvTheme, u: Float) {
     BackHandler(enabled = !first) { vm.showSettings = false }
     val initialFocus = remember { FocusRequester() }
     var address by remember { mutableStateOf(vm.server.ifBlank { "192.168.1.110:8420" }) }
+    var accessKey by remember { mutableStateOf(vm.api.key) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { delay(250); runCatching { initialFocus.requestFocus() } } // don't let the text field grab focus (and pop the on-screen keyboard)
@@ -438,9 +439,11 @@ private fun SettingsScreen(vm: AppVm, t: WbtvTheme, u: Float) {
 
             Heading(if (first) "Address of your WBTV server" else "Connection", t, u)
             OutlinedTextField(value = address, onValueChange = { address = it; error = null }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Text("Access key (only if you set a password on the server)", color = t.dim, fontSize = (12 * u).sp)
+            OutlinedTextField(value = accessKey, onValueChange = { accessKey = it; error = null }, singleLine = true, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = Color(0xFFFF8A8A), fontSize = (13 * u).sp) }
             TvButton(if (busy) "Connecting…" else if (first) "Connect" else "Connect to this address", false, t, u, if (first) Modifier.focusRequester(initialFocus) else Modifier) {
-                busy = true; vm.connect(address) { e -> busy = false; error = e }
+                busy = true; vm.connect(address, accessKey) { e -> busy = false; error = e }
             }
             if (!first) Text("Tip: press Menu any time to open this screen, or move up from the top channel in the guide.", color = t.dim, fontSize = (12 * u).sp)
         }

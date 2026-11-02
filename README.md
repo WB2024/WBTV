@@ -141,6 +141,10 @@ WBTV can act as a TV tuner, so every channel (with its ads and announcements) sh
 
 The HDHomeRun emulation serves a normal MPEG-TS stream without re-encoding, so it costs almost no extra CPU on top of the shared channel stream.
 
+## Password (optional)
+
+WBTV is built for a home network and has no login by default. If you open it to the internet (or just want a lock on it), turn on a password in **Setup > Settings > Security**. Browsers log in once; the Android TV app, IPTV players and Plex/Jellyfin use an **access key** shown on the same page (the Android app has a field for it). Don't expose any self-hosted app to the internet over plain http; put it behind HTTPS (a reverse proxy such as Caddy or Nginx Proxy Manager). The full API is documented in [docs/API.md](docs/API.md).
+
 ## Hardware encoding (optional)
 
 By default WBTV encodes on the CPU (x264). If the server has a GPU you can hand the encode to it, which frees the CPU for more channels at once. Settings > Video encoding is **Automatic** by default: WBTV runs a real test encode and silently falls back to the CPU if the GPU is not usable, and the Settings page tells you which one is in use.

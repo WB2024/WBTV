@@ -10,8 +10,8 @@ import kotlinx.serialization.json.put
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Tiny client for the WBTV server's JSON API (no auth, plain LAN http). */
-class Api(rawBase: String) {
+/** Tiny client for the WBTV server's JSON API. `key` is the access key when the server has a password set. */
+class Api(rawBase: String, val key: String = "") {
     val base: String = normalise(rawBase)
 
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -20,6 +20,7 @@ class Api(rawBase: String) {
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
             c.requestMethod = method
+            if (key.isNotEmpty()) c.setRequestProperty("Authorization", "Bearer $key")
             c.connectTimeout = 5000
             c.readTimeout = 20000
             if (body != null) {
@@ -58,14 +59,16 @@ class Api(rawBase: String) {
 
     suspend fun scanStatus(): JsonObject = json.parseToJsonElement(get("/api/scan")).jsonObject
 
-    fun liveUrl(channelId: Int, viewer: String) = "$base/live/$channelId/index.m3u8?v=$viewer"
+    private val keyQ get() = if (key.isEmpty()) "" else "&key=$key"
 
-    fun artUrl(itemId: Int) = "$base/api/art/$itemId"
+    fun liveUrl(channelId: Int, viewer: String) = "$base/live/$channelId/index.m3u8?v=$viewer$keyQ"
+
+    fun artUrl(itemId: Int) = "$base/api/art/$itemId" + if (key.isEmpty()) "" else "?key=$key"
 
     /** Tell the server we stopped watching so it can shut the channel's encoder down. */
     suspend fun leave(channelId: Int, viewer: String) = withContext(Dispatchers.IO) {
         runCatching {
-            val c = URL("$base/live/$channelId/stop?v=$viewer").openConnection() as HttpURLConnection
+            val c = URL("$base/live/$channelId/stop?v=$viewer$keyQ").openConnection() as HttpURLConnection
             c.requestMethod = "POST"
             c.connectTimeout = 3000
             c.readTimeout = 3000

@@ -31,7 +31,7 @@ enum class Zone { GRID, TOOLBAR }
 class AppVm(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
     private val viewer = UUID.randomUUID().toString().take(12)
-    var api: Api = Api(prefs.server)
+    var api: Api = Api(prefs.server, prefs.key)
         private set
 
     // ---- state the UI observes ------------------------------------------------
@@ -172,12 +172,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     // ---- connection / settings -----------------------------------------------------
     fun openSettings() { showSettings = true; loadServerSettings() }
 
-    fun connect(newServer: String, onResult: (String?) -> Unit) = viewModelScope.launch {
-        val candidate = Api(newServer)
+    fun connect(newServer: String, newKey: String, onResult: (String?) -> Unit) = viewModelScope.launch {
+        val candidate = Api(newServer, newKey.trim())
         if (candidate.base.isEmpty()) { onResult("Enter your WBTV server address"); return@launch }
-        runCatching { candidate.channels() }.onFailure { onResult("Can't reach ${candidate.base}: ${it.message}"); return@launch }
-        val changed = candidate.base != api.base
+        runCatching { candidate.channels() }.onFailure {
+            onResult(if (it.message?.contains("401") == true) "This server is password protected. Enter its access key (WBTV Setup > Settings > Security)." else "Can't reach ${candidate.base}: ${it.message}")
+            return@launch
+        }
+        val changed = candidate.base != api.base || candidate.key != api.key
         prefs.server = candidate.base
+        prefs.key = candidate.key
         server = candidate.base
         if (changed) { stopStream(); playingId = null; api = candidate; prefs.lastChannel = -1 }
         showSettings = false

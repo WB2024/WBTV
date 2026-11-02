@@ -18,6 +18,7 @@ function h(tag, props = {}, ...kids) {
 }
 const api = async (url, opt = {}) => {
   const r = await fetch(url, { ...opt, headers: opt.body ? { 'Content-Type': 'application/json' } : undefined, body: opt.body ? JSON.stringify(opt.body) : undefined });
+  if (r.status === 401 && !url.startsWith('/api/auth/')) { location.reload(); return new Promise(() => {}); } // session expired: show the login again
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
   return r.json();
 };
@@ -544,8 +545,31 @@ async function tabAnnounce(body) {
     h('p', { class: 'note' }, 'Voices are generated locally (Piper, offline, no cost) a moment before they air and cached. Changing these re-plans everything that has not aired yet.'));
 }
 
+function securityBlock(enabled, key) {
+  const pw = h('input', { type: 'password', placeholder: enabled ? 'New password' : 'Choose a password', autocomplete: 'new-password' });
+  const msg = h('span', { class: 'note' });
+  const origin = location.origin;
+  const mono = (t) => h('code', { style: 'display:block;word-break:break-all;margin:2px 0 8px' }, t);
+  const setPw = async () => {
+    try { await api('/api/auth/password', { method: 'POST', body: { password: pw.value } }); renderSetup(); } catch (e) { msg.textContent = e.message; }
+  };
+  const rows = [h('div', { class: 'row2' }, pw, h('button', { onclick: setPw }, enabled ? 'Change password' : 'Turn on password'), msg)];
+  if (!enabled) rows.push(h('p', { class: 'note' }, 'Off: anyone on your network can open WBTV. Turn it on if you expose WBTV outside your home. Browsers log in once; apps use an access key.'));
+  else rows.push(
+    h('p', { class: 'note' }, 'A password is set. Other apps (the Android TV app, IPTV players, Plex/Jellyfin) use this access key instead of the password:'),
+    mono(key),
+    h('p', { class: 'note' }, 'IPTV playlist (key included):'), mono(origin + '/iptv/playlist.m3u?key=' + key),
+    h('p', { class: 'note' }, 'XMLTV guide:'), mono(origin + '/iptv/epg.xml?key=' + key),
+    h('div', { class: 'row2' },
+      h('button', { onclick: async () => { await api('/api/auth/key', { method: 'POST' }); renderSetup(); } }, 'Make a new access key'),
+      h('button', { onclick: async () => { await api('/api/auth/logout', { method: 'POST' }); location.reload(); } }, 'Log out'),
+      h('button', { onclick: async () => { if (confirm('Remove the password? Anyone on your network will be able to open WBTV.')) { await api('/api/auth', { method: 'DELETE' }); renderSetup(); } } }, 'Remove password')));
+  return h('div', {}, rows);
+}
+
 async function tabSettings(body) {
-  const [s, sc, hwi] = await Promise.all([api('/api/settings'), api('/api/scan'), api('/api/hw')]);
+  const [s, sc, hwi, au] = await Promise.all([api('/api/settings'), api('/api/scan'), api('/api/hw'), api('/api/auth/status')]);
+  const apiKey = au.enabled ? (await api('/api/auth/key')).key : '';
   const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 120 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
   const lastScan = sc.finished ? `Last scan ${ago(sc.finished)}` : 'Not scanned yet';
   const next = sc.nextAuto ? ` · next automatic scan ${sc.nextAuto <= Date.now() ? 'any moment' : 'in ' + Math.max(1, Math.round((sc.nextAuto - Date.now()) / 60000)) + ' min'}` : '';
@@ -556,6 +580,8 @@ async function tabSettings(body) {
     boolField(s, 'scanOnStartup', 'Scan when WBTV starts', ''),
     numField(s, 'pauseBufferMinutes', 'Pause / rewind buffer (minutes)', 'How far back you can pause or rewind live TV (0 = off, max 30). Kept in RAM on the server (about 20 MB per minute per watched channel).', { min: 0 }),
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/scan', { method: 'POST', body: {} }); setTimeout(renderSetup, 800); } }, 'Scan now'), h('span', { class: 'note' }, lastScan + next + (sc.running ? ' · scanning…' : ''))),
+    h('h3', {}, 'Security'),
+    securityBlock(au.enabled, apiKey),
     h('h3', {}, 'Video encoding'),
     h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Hardware encoding'),
       h('select', { onchange: async (e) => { await put({ hwEncoder: e.target.value }); renderSetup(); } },
@@ -595,4 +621,22 @@ function tabAppearance(body) {
 }
 
 // ------------------------------------------------------------------ boot
-loadGuide(false).catch((e) => { $('#guide').textContent = 'Failed to load guide: ' + e.message; });
+async function gate() {
+  const st = await fetch('/api/auth/status').then((r) => r.json()).catch(() => ({ enabled: false }));
+  if (!st.enabled || st.authed) return;
+  await new Promise((done) => {
+    const pw = h('input', { type: 'password', placeholder: 'Password', autofocus: true });
+    const err = h('div', { class: 'note', style: 'min-height:1.4em;color:#ff8a8a' });
+    const go = async () => {
+      try { await api('/api/auth/login', { method: 'POST', body: { password: pw.value } }); $('#modal').classList.add('hidden'); done(); }
+      catch (e) { err.textContent = e.message; pw.select(); }
+    };
+    pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); e.stopPropagation(); });
+    const m = $('#modal');
+    m.classList.remove('hidden');
+    m.replaceChildren(h('div', { class: 'dlg', style: 'padding:24px;max-width:360px;height:auto;text-align:center' },
+      h('img', { src: '/img/logo.png', alt: 'WBTV', style: 'height:48px;margin-bottom:12px' }), h('p', {}, 'This WBTV is password protected.'), pw, err, h('button', { onclick: go }, 'Log in')));
+    setTimeout(() => pw.focus(), 50);
+  });
+}
+gate().then(() => loadGuide(false)).catch((e) => { $('#guide').textContent = 'Failed to load guide: ' + e.message; });

@@ -127,7 +127,7 @@ const DEFAULTS = {
 export function getSettings(db) {
   const out = { ...DEFAULTS };
   for (const r of db.prepare('SELECT key,value FROM settings').all()) {
-    try { out[r.key] = JSON.parse(r.value); } catch { /* ignore */ }
+    if (r.key in DEFAULTS) try { out[r.key] = JSON.parse(r.value); } catch { /* ignore */ }
   }
   return out;
 }

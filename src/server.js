@@ -12,6 +12,7 @@ import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './sched
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
 import { addAdUrls, processAds, removeAd } from './ads.js';
+import { initAuth } from './auth.js';
 import { hw, detectHw } from './hw.js';
 import { registerIptvOut } from './iptvout.js';
 import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
@@ -19,6 +20,7 @@ import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = openDb(cfg.configDir);
 const app = Fastify({ logger: { level: 'warn' } });
+const { getToken } = initAuth(app, db);
 
 // ---------------------------------------------------------------- scanning
 const scan = { running: false, phase: 'idle', library: null, dirs: 0, files: 0, changed: 0, removed: 0, probe: null, started: 0, finished: 0, error: null, auto: false };
@@ -316,8 +318,10 @@ app.get('/live/:id/index.m3u8', async (req, reply) => {
     await new Promise((r) => setTimeout(r, 150));
     if (b.stopped) break;
   }
-  const pl = b.playlist();
+  let pl = b.playlist();
   if (!pl) return reply.code(503).send('stream not ready');
+  // players that log in with ?key= do not pass it on to the segments, so add it to each segment line
+  if (req.query.key) pl = pl.replace(/^(r\d+_\d+\.ts)$/gm, `$1?key=${encodeURIComponent(req.query.key)}`);
   return reply.header('Cache-Control', 'no-cache').type('application/vnd.apple.mpegurl').send(pl);
 });
 
@@ -331,7 +335,7 @@ app.get('/live/:id/:seg', async (req, reply) => {
 
 app.post('/live/:id/stop', async (req) => { live.get(Number(req.params.id))?.leave(req.query.v || req.body?.v); return { ok: true }; });
 
-registerIptvOut(app, db, broadcaster);
+registerIptvOut(app, db, broadcaster, getToken);
 
 // ---------------------------------------------------------------- static
 app.register(fastifyStatic, { root: path.join(root, 'public'), prefix: '/' });
