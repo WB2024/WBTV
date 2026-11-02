@@ -13,7 +13,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -77,7 +79,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var baselineOffsetMs: Long? = null     // the normal live latency, so "behind live" only counts time we've given up
 
     // ---- player ----------------------------------------------------------------
-    val player: ExoPlayer = ExoPlayer.Builder(app).build().apply {
+    // The server holds a channel's first playlist request until the stream has started (up to ~25 s when it is busy); ExoPlayer's default
+    // 8 s read timeout would give up first and just retry, so be more patient.
+    private val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(10_000).setReadTimeoutMs(30_000)
+    val player: ExoPlayer = ExoPlayer.Builder(app).setMediaSourceFactory(DefaultMediaSourceFactory(http)).build().apply {
         playWhenReady = true
         addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
