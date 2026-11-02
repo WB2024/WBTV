@@ -406,7 +406,11 @@ app.register(fastifyStatic, { root: path.join(root, 'node_modules/hls.js/dist'),
 // ---------------------------------------------------------------- boot
 fs.mkdirSync(cfg.tmpDir, { recursive: true });
 fs.rmSync(path.join(cfg.tmpDir, 'live'), { recursive: true, force: true });
-await app.listen({ port: cfg.port, host: '0.0.0.0' });
+// A stray error in a timer or background task must not take every stream down with it: log it and keep serving.
+// (Failing to bind the port is different: that really is fatal, so exit and let Docker restart us.)
+process.on('unhandledRejection', (e) => console.error('unhandled rejection (continuing):', e));
+process.on('uncaughtException', (e) => console.error('uncaught exception (continuing):', e));
+try { await app.listen({ port: cfg.port, host: '0.0.0.0' }); } catch (e) { console.error('cannot listen on port', cfg.port, e); process.exit(1); }
 console.log(`WBTV listening on :${cfg.port}`);
 
 detectHw(getSettings(db).hwEncoder).catch((e) => console.error('hw detect failed', e));
