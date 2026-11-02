@@ -245,6 +245,8 @@ export function syncLiveChannels(db) {
       db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(`live_autoenabled_${lib}`, '1');
     }
     const keep = new Set(streams.map((x) => `live:${x.id}`));
-    for (const [key, ch] of existing) if (!keep.has(key)) db.prepare('UPDATE channels SET item_count=0 WHERE id=?').run(ch.id);
+    // channels whose stream is gone (its playlist was removed or refreshed without it) are deleted, not just hidden: otherwise they pile up
+    // in Setup > Channels and keep their channel numbers for ever
+    for (const [key, ch] of existing) if (!keep.has(key)) db.prepare('DELETE FROM channels WHERE id=?').run(ch.id);
   });
 }
