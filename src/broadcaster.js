@@ -183,6 +183,9 @@ export class Broadcaster {
       if (plan && plan.file) {
         const info = await probeFile(plan.file);
         this.mark('probe');
+        // an announcement clip can be shorter than its slot (a very short programme): start it over instead of seeking past its end,
+        // which gives ffmpeg nothing to read and the viewer a test card
+        if (info && plan.promo && info.duration && plan.offset > info.duration - 3) plan.offset = 0;
         if (info && !this.stopped) {
           produced = plan.promo
             ? await this.runPromo(plan, dur, info.hasAudio, burst)
@@ -491,7 +494,10 @@ export class Broadcaster {
         run.ended = true;
         this.sync();
         this.streamTime += run.produced;
-        if (err.trim() && !this.stopped) console.error(`[ch${this.id}] ffmpeg: ${err.trim().split('\n').slice(-3).join(' | ')}`);
+        if (err.trim() && !this.stopped) {
+          console.error(`[ch${this.id}] ffmpeg: ${err.trim().split('\n').slice(-3).join(' | ')}`);
+          if (!run.produced) console.error(`[ch${this.id}] failed command: ${cfg.ffmpeg} ${args.join(' ').slice(0, 1800)}`); // so a broken piece can be reproduced by hand
+        }
         resolve(run.produced);
       });
     });
