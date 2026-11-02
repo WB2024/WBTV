@@ -349,16 +349,36 @@ function broadcaster(id) {
   return b;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const MAX_COLD_STARTS = 3; // channels allowed to be spinning up at once; each one is an ffmpeg process that needs a CPU core for a couple of seconds
+const coldStarting = () => { let n = 0; for (const b of live.values()) if (!b.stopped && b.segs.length < 2) n++; return n; };
+
 app.get('/live/:id/index.m3u8', async (req, reply) => {
   const id = Number(req.params.id);
   const ch = db.prepare('SELECT id FROM channels WHERE id=? AND enabled=1').get(id);
   if (!ch) return reply.code(404).send();
-  const b = broadcaster(id);
+  let gone = false;
+  reply.raw.on('close', () => { gone = true; }); // the player moved on (it cancels the request) or the connection dropped
+  let b = live.get(id);
+  let created = false;
+  if (!b) {
+    // Flipping through channels quickly must not start an encoder for every channel on the way: give the viewer a moment to move on,
+    // and never let more than a few channels cold-start together (a start-up storm starves every stream, including the one being watched).
+    await sleep(250);
+    for (let w = 0; w < 60 && !gone && coldStarting() >= MAX_COLD_STARTS && !live.has(id); w++) await sleep(100);
+    if (gone) return reply;
+    b = live.get(id);
+    if (!b) { b = broadcaster(id); created = true; }
+  }
   b.touch(req.query.v);
   const t0 = Date.now();
-  while ((b.ready < 2 && Date.now() - t0 < 9000) || (b.ready < 1 && Date.now() - t0 < 25000)) {
-    await new Promise((r) => setTimeout(r, 150));
+  while (!gone && ((b.ready < 2 && Date.now() - t0 < 9000) || (b.ready < 1 && Date.now() - t0 < 25000))) {
+    await sleep(150);
     if (b.stopped) break;
+  }
+  if (gone) {
+    if (created && b.segs.length < 2) b.leave(req.query.v); // nobody is waiting for this channel any more: do not leave its encoder running
+    return reply;
   }
   let pl = b.playlist();
   if (!pl) return reply.code(503).send('stream not ready');
