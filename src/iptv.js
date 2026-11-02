@@ -92,8 +92,10 @@ export async function resolveYoutube(url) {
 }
 
 const openCache = new Map(); // url -> { at, val }
+const FAIL_TTL = 10 * 1000;
 const OPEN_TTL = 20 * 60 * 1000; // resolved YouTube links last hours; a short cache makes re-tuning instant
-export const forgetLive = (url) => openCache.delete(url);
+/** A run of this stream failed: do not trust the cached link, but also do not re-resolve it more than once every few seconds. */
+export const forgetLive = (url) => openCache.set(url, { at: Date.now(), val: null });
 
 /**
  * Everything needed to play a live stream right now: the playable URL(s) and what they contain.
@@ -101,14 +103,16 @@ export const forgetLive = (url) => openCache.delete(url);
  */
 export async function openLive(st, timeoutMs = 20000) {
   const hit = openCache.get(st.url);
-  if (hit && Date.now() - hit.at < OPEN_TTL) return hit.val;
+  // a failure is remembered briefly too, so a viewer sitting on a dead stream does not make us hammer YouTube / the source every few seconds
+  if (hit && Date.now() - hit.at < (hit.val ? OPEN_TTL : FAIL_TTL)) return hit.val;
   const urls = st.src_kind === 'youtube' ? await resolveYoutube(st.url) : [st.url];
   let val = null;
   if (urls) {
     const info = await probeLive(urls[0], timeoutMs);
     if (info) val = { urls, info: urls.length > 1 ? { hasVideo: info.hasVideo, hasAudio: true } : info };
   }
-  if (val) openCache.set(st.url, { at: Date.now(), val });
+  openCache.set(st.url, { at: Date.now(), val });
+  if (openCache.size > 500) openCache.delete(openCache.keys().next().value);
   return val;
 }
 

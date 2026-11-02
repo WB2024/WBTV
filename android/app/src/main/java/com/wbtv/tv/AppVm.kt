@@ -83,9 +83,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     // paused / rewound for longer than the server buffer: jump back to live
                     seekToDefaultPosition(); prepare(); baselineOffsetMs = null; return
                 }
-                // live HLS: the server may still be spinning the channel up, so just try again
-                if (retries++ < 8) viewModelScope.launch { delay(1500L * retries.coerceAtMost(4)); if (playingId == id) startStream(id) }
-                else status = "Can't play this channel (${error.errorCodeName})"
+                // live HLS: the server may still be spinning the channel up, or have hiccupped. Keep trying (a little slower each
+                // time, at most every 9 s) for as long as this channel is selected, so a blip in the night never leaves an error screen.
+                retries++
+                if (retries > 8) status = "Reconnecting… (${error.errorCodeName})"
+                viewModelScope.launch { delay(1500L * retries.coerceAtMost(6)); if (playingId == id) startStream(id) }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
