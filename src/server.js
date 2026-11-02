@@ -104,7 +104,11 @@ app.post('/api/libraries', async (req, reply) => {
     const id = Number(r.lastInsertRowid);
     runScan([id]); // fire and forget
     return { id };
-  } catch { return reply.code(409).send({ error: 'that folder is already a library' }); }
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e?.message))) return reply.code(409).send({ error: 'that folder is already a library' });
+    console.error('adding a library failed:', e);
+    return reply.code(500).send({ error: 'could not add the library: ' + (e?.message || e) });
+  }
 });
 
 app.delete('/api/libraries/:id', async (req) => {
