@@ -118,6 +118,10 @@ fun WbtvRoot(vm: AppVm) {
             } else vm.status?.let {
                 Text(it, color = Color.White, fontSize = (18 * u).sp, modifier = Modifier.align(Alignment.Center).background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(16.dp))
             }
+            // a channel was chosen but is not on screen yet (slow start, or the surf debounce): say so instead of showing a silent black screen
+            if (!loading && vm.status == null && vm.buffering && vm.playingId != null && !vm.guideVisible) {
+                Text("Tuning…", color = Color.White, fontSize = (16 * u).sp, modifier = Modifier.align(Alignment.Center).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp))
+            }
             vm.toast?.let {
                 Text(it, color = Color.White, fontSize = (16 * u).sp, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp * u).background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(12.dp))
             }

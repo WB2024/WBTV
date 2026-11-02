@@ -54,6 +54,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     var osdUntil by mutableLongStateOf(0L)
     var osdDigits by mutableStateOf("")
     var status by mutableStateOf<String?>(null)    // loading / error text
+    var buffering by mutableStateOf(false)         // a channel is selected but not playing yet: shows "Tuning…"
     var detail by mutableStateOf<ItemDetail?>(null)
     var toast by mutableStateOf<String?>(null)
     var paused by mutableStateOf(false)
@@ -93,6 +94,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onPlaybackStateChanged(state: Int) {
+                buffering = playingId != null && (state == Player.STATE_BUFFERING || state == Player.STATE_IDLE)
                 if (state == Player.STATE_READY) {
                     retries = 0; status = null
                     if (baselineOffsetMs == null && playWhenReady) baselineOffsetMs = edgeDistanceMs()
@@ -243,6 +245,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             lastChannelId = playingId
             stopStream()
             playingId = ch.id
+            buffering = true
             prefs.lastChannel = ch.id
             retries = 0
             status = null
@@ -301,7 +304,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /** Activity left the foreground: stop pulling video and free the server-side encoder. */
-    fun onBackground() { startJob?.cancel(); if (playingId != null) { player.stop(); player.clearMediaItems(); playingId?.let { id -> viewModelScope.launch { api.leave(id, viewer) } } } }
+    fun onBackground() { startJob?.cancel(); buffering = false; if (playingId != null) { player.stop(); player.clearMediaItems(); playingId?.let { id -> viewModelScope.launch { api.leave(id, viewer) } } } }
 
     /** Back in the foreground: rejoin the live stream (we're deliberately *not* paused-in-time, it's TV). */
     private var firstStart = true
