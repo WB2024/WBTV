@@ -6,6 +6,7 @@ import { probe } from './media.js';
 import { REEL } from './scheduler.js';
 import { getSettings } from './db.js';
 import { prepare as prepareNarration } from './tts.js';
+import { resolveYoutube, probeLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
 const SEG_SECONDS = 4;
@@ -36,7 +37,8 @@ export class Broadcaster {
   start() {
     fs.rmSync(this.dir, { recursive: true, force: true });
     fs.mkdirSync(this.dir, { recursive: true });
-    this.loop().catch((e) => console.error(`[ch${this.id}] broadcaster crashed`, e));
+    const kind = this.db.prepare('SELECT kind FROM channels WHERE id=?').get(this.id)?.kind;
+    (kind === 'live' ? this.loopLive() : this.loop()).catch((e) => console.error(`[ch${this.id}] broadcaster crashed`, e));
     this.reaper = setInterval(() => {
       const cut = Date.now() - 25000;
       for (const [v, t] of this.viewers) if (t < cut) this.viewers.delete(v);
@@ -120,7 +122,11 @@ export class Broadcaster {
       if (block && (block.kind !== 'ad' || block.file)) {
         dur = block.end - cursor;
         if (dur < 0.05) { cursor = block.end + 0.01; continue; }
-        plan = { file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start };
+        plan = {
+          file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start,
+          meta: block.item_kind === 'musicvideo' || block.item_kind === 'track'
+            ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster } : null,
+        };
       } else {
         // a hole in the schedule, or an ad that has since been removed: fill with a real ad, not the test card
         const until = block ? block.end : this.db.prepare('SELECT MIN(start) AS s FROM blocks WHERE channel_id=? AND start>?').get(this.id, cursor)?.s;
@@ -134,7 +140,9 @@ export class Broadcaster {
         if (info && !this.stopped) {
           produced = plan.promo
             ? await this.runPromo(plan, dur, info.hasAudio, burst)
-            : await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst);
+            : plan.meta?.kind === 'track'
+              ? await this.runAudio(plan, dur, burst)
+              : await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst, plan.meta);
           ok = produced > 0.5;
         }
       }
@@ -240,13 +248,94 @@ export class Broadcaster {
     };
   }
 
-  runContent(file, offset, dur, hasAudio, burst) {
+  /** Write a one-line caption to a file (drawtext reads text from files so no escaping is needed). */
+  textFile(name, text) {
+    const dir = path.join(this.dir, 'captions');
+    fs.mkdirSync(dir, { recursive: true });
+    const f = path.join(dir, `${this.runNo}_${name}.txt`);
+    fs.writeFileSync(f, String(text ?? '').replace(/[\r\n]+/g, ' ').slice(0, 60));
+    return f;
+  }
+
+  runContent(file, offset, dur, hasAudio, burst, meta) {
     const e = this.encodeArgs();
+    let vf = e.vf;
+    // music video: "Artist - Title" lower-third for the first few seconds of each track
+    if (meta?.kind === 'musicvideo' && fs.existsSync(cfg.fontFile) && offset < 6) {
+      const { height: H } = cfg;
+      const en = `enable='between(t,0.5,${Math.max(2, 8 - offset).toFixed(1)})'`;
+      const af = this.textFile('mv_a', meta.artist || ''), tf = this.textFile('mv_t', meta.title || '');
+      vf += `,drawbox=x=0:y=ih*0.80:w=iw*0.66:h=ih*0.14:color=black@0.66:t=fill:${en}` +
+        `,drawtext=fontfile=${cfg.fontFile}:textfile=${af}:expansion=none:x=w*0.035:y=h*0.815:fontsize=${Math.round(H * 0.042)}:fontcolor=0xffd400:${en}` +
+        `,drawtext=fontfile=${cfg.fontFile}:textfile=${tf}:expansion=none:x=w*0.035:y=h*0.865:fontsize=${Math.round(H * 0.05)}:fontcolor=white:${en}`;
+    }
     const args = ['-hide_banner', '-loglevel', 'error', '-nostdin',
       '-ss', offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', file];
     if (!hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
     args.push('-t', dur.toFixed(3), '-map', '0:v:0', '-map', hasAudio ? '0:a:0' : '1:a:0',
-      '-vf', e.vf, '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
+      '-vf', vf, '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
+    return this.runFfmpeg(args);
+  }
+
+  /** Filter graph for audio-only programming: cover art, now-playing text and a live waveform. Input 0 = audio, 1 = background, 2 = art. */
+  audioVisual({ hasArt, label, title, sub1, sub2 }) {
+    const { width: W, height: H } = cfg;
+    const wh = Math.round(H * 0.2), artH = Math.round(H * 0.5);
+    const tx = hasArt ? Math.round(W * 0.06 + artH + W * 0.04) : Math.round(W * 0.08);
+    const font = fs.existsSync(cfg.fontFile) ? `fontfile=${cfg.fontFile}:` : '';
+    const dt = (file, y, size, color) => `drawtext=${font}textfile=${file}:expansion=none:x=${tx}:y=${y}:fontsize=${size}:fontcolor=${color}`;
+    const files = { l: this.textFile('av_l', label), t: this.textFile('av_t', title), a: this.textFile('av_a', sub1), b: this.textFile('av_b', sub2) };
+    let f = '[0:a]aresample=48000,aformat=channel_layouts=stereo,asplit=2[a][w];' +
+      `[w]volume=3,alimiter=limit=0.95,showwaves=s=${W}x${wh}:mode=cline:colors=cyan:rate=25:scale=sqrt:draw=full,format=yuv420p[wv];[1:v]format=yuv420p[bg];[bg][wv]overlay=0:${H - wh - Math.round(H * 0.04)}[b1];`;
+    f += hasArt ? `[2:v]scale=-2:${artH},format=yuv420p[art];[b1][art]overlay=${Math.round(W * 0.06)}:${Math.round(H * 0.14)}[b2];` : '[b1]null[b2];';
+    f += `[b2]${dt(files.l, Math.round(H * 0.16), Math.round(H * 0.04), '0xffd400')},${dt(files.t, Math.round(H * 0.23), Math.round(H * 0.07), 'white')},` +
+      `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')},format=yuv420p[v]`;
+    return f;
+  }
+
+  /** A radio track: no picture of its own, so we draw one. */
+  runAudio(plan, dur, burst) {
+    const e = this.encodeArgs();
+    const m = plan.meta;
+    const art = m.poster && fs.existsSync(m.poster) ? m.poster : null;
+    const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-ss', plan.offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', plan.file,
+      '-f', 'lavfi', '-i', `color=c=0x0a1030:s=${cfg.width}x${cfg.height}:r=25`];
+    if (art) args.push('-loop', '1', '-framerate', '25', '-i', art);
+    const filter = this.audioVisual({ hasArt: !!art, label: 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
+    args.push('-t', dur.toFixed(3), '-filter_complex', filter, '-map', '[v]', '-map', '[a]', ...e.codec);
+    return this.runFfmpeg(args);
+  }
+
+  // ---- live (IPTV / YouTube) channels: no schedule, we just relay the stream --------------------
+
+  async loopLive() {
+    const st = this.db.prepare('SELECT * FROM live_streams WHERE channel_id=?').get(this.id);
+    const name = this.db.prepare('SELECT COALESCE(name_override, auto_name) AS n FROM channels WHERE id=?').get(this.id)?.n || 'Live';
+    if (!st) return;
+    while (!this.stopped) {
+      const url = st.src_kind === 'youtube' ? await resolveYoutube(st.url) : st.url; // YouTube links expire: resolve each time
+      const info = url ? await probeLive(url, 25000) : null;
+      let produced = 0;
+      if (info && !this.stopped) produced = await this.runLive(url, info, name, st.grp);
+      if (this.stopped) return;
+      if (produced < 0.5) { if ((await this.runSlate(6)) < 0.5) await sleep(3000); } // source is down: test card, then retry
+      else await sleep(1000);
+    }
+  }
+
+  runLive(url, info, name, group) {
+    const e = this.encodeArgs();
+    const args = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
+    if (isUrl(url)) args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000');
+    args.push('-i', url);
+    if (info.hasVideo) {
+      if (!info.hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-shortest');
+      args.push('-map', '0:v:0', '-map', info.hasAudio ? '0:a:0' : '1:a:0', '-vf', e.vf, '-af', 'aresample=48000:async=1,aformat=channel_layouts=stereo', ...e.codec);
+    } else {
+      // live radio station: draw a picture with the station name
+      args.push('-f', 'lavfi', '-i', `color=c=0x0a1030:s=${cfg.width}x${cfg.height}:r=25`);
+      args.push('-filter_complex', this.audioVisual({ hasArt: false, label: 'LIVE RADIO', title: name, sub1: group || '', sub2: '' }), '-map', '[v]', '-map', '[a]', ...e.codec);
+    }
     return this.runFfmpeg(args);
   }
 

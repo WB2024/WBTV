@@ -3,7 +3,8 @@ import path from 'node:path';
 import { parseNfo } from './nfo.js';
 import { tx } from './db.js';
 import { cfg } from './config.js';
-import { probe } from './media.js';
+import { probe, probeTags } from './media.js';
+import { syncIptvLibrary } from './iptv.js';
 
 const VIDEO = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.ts', '.m2ts', '.mpg', '.mpeg', '.flv', '.webm', '.divx', '.vob', '.ogm']);
 const EXTRA_FILE = /(^|[-_. ])(trailer|sample|featurette|behindthescenes|deleted|interview|clip)\.[^.]+$/i;
@@ -40,6 +41,8 @@ function pickArt(names, base, kind) {
 
 export async function scanLibrary(db, lib, progress) {
   if (lib.type.startsWith('ads')) return scanAdsLibrary(db, lib, progress);
+  if (lib.type === 'iptv') return syncIptvLibrary(db, lib, progress);
+  if (lib.type === 'radio') return scanRadio(db, lib, progress);
   const io = new Pool(cfg.scanConcurrency);
   const readdir = (d) => io.run(() => fs.readdir(d, { withFileTypes: true }));
   const stat = (p) => io.run(() => fs.stat(p)).catch(() => null);
@@ -51,12 +54,12 @@ export async function scanLibrary(db, lib, progress) {
   let batch = [];
 
   const upsertItem = db.prepare(`INSERT INTO items
-    (library_id,show_id,kind,path,title,plot,year,season,episode,aired,rating,mpaa,runtime,probed,studios,genres,actors,poster,mtime,size,nfo_mtime)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    (library_id,show_id,kind,path,title,plot,year,season,episode,aired,rating,mpaa,runtime,probed,studios,genres,actors,poster,mtime,size,nfo_mtime,artist,album)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(path) DO UPDATE SET show_id=excluded.show_id,kind=excluded.kind,title=excluded.title,plot=excluded.plot,year=excluded.year,
       season=excluded.season,episode=excluded.episode,aired=excluded.aired,rating=excluded.rating,mpaa=excluded.mpaa,
       runtime=excluded.runtime,probed=excluded.probed,studios=excluded.studios,genres=excluded.genres,actors=excluded.actors,
-      poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,nfo_mtime=excluded.nfo_mtime`);
+      poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,nfo_mtime=excluded.nfo_mtime,artist=excluded.artist,album=excluded.album`);
   const flush = () => {
     if (!batch.length) return;
     const b = batch; batch = [];
@@ -100,11 +103,18 @@ export async function scanLibrary(db, lib, progress) {
     let runtime = nfo?.durationSec || 0, probed = runtime ? 1 : 0;
     if (!runtime && nfo?.runtimeSec) runtime = nfo.runtimeSec; // provisional, ffprobe will correct it
 
-    if (lib.type === 'movies') {
+    if (lib.type === 'music') {
+      // music video: NFO first, else "Artist - Title" from the file name
+      const m = base.match(/^(.+?)s+-s+(.+)$/);
+      const artist = nfo?.artist || (m ? m[1].trim() : path.basename(dir));
+      const title = nfo?.title || (m ? m[2].trim() : cleanName(base));
+      queue([lib.id, null, 'musicvideo', full, title, nfo?.plot || '', nfo?.year, null, null, nfo?.aired || '', nfo?.rating ?? null, nfo?.mpaa || '',
+        runtime, probed, j(nfo?.studios), j(nfo?.genres), j([]), poster, st.mtimeMs, st.size, nst ? nst.mtimeMs : null, artist, nfo?.album || '']);
+    } else if (lib.type === 'movies') {
       const folder = ctx.videoCount === 1 ? path.basename(dir) : base;
       queue([lib.id, null, 'movie', full, nfo?.title || cleanName(folder), nfo?.plot || '', nfo?.year ?? yearOf(folder), null, null,
         nfo?.aired || '', nfo?.rating ?? null, nfo?.mpaa || '', runtime, probed, j(nfo?.studios), j(nfo?.genres), j(nfo?.actors),
-        poster, st.mtimeMs, st.size, nst ? nst.mtimeMs : null]);
+        poster, st.mtimeMs, st.size, nst ? nst.mtimeMs : null, null, null]);
     } else {
       let season = nfo?.season, episode = nfo?.episode;
       const m = base.match(/S(\d{1,3})\s*E(\d{1,3})/i) || base.match(/\b(\d{1,2})x(\d{2,3})\b/i);
@@ -113,7 +123,7 @@ export async function scanLibrary(db, lib, progress) {
       if (!title) title = base.replace(/^.*?S\d+\s*E\d+\s*[-. ]*/i, '').replace(/\[.*?\]|\(.*?\)/g, '').replace(/[._]+/g, ' ').trim() || base;
       queue([lib.id, ctx.show.id, 'episode', full, title, nfo?.plot || '', nfo?.year, season ?? null, episode ?? null,
         nfo?.aired || '', nfo?.rating ?? null, nfo?.mpaa || '', runtime, probed, j(nfo?.studios), j(nfo?.genres), j(nfo?.actors),
-        poster, st.mtimeMs, st.size, nst ? nst.mtimeMs : null]);
+        poster, st.mtimeMs, st.size, nst ? nst.mtimeMs : null, null, null]);
     }
   }
 
@@ -149,6 +159,54 @@ export async function scanLibrary(db, lib, progress) {
     tx(db, () => { for (const p of gone) del.run(p); });
   }
   db.prepare('DELETE FROM shows WHERE library_id=? AND id NOT IN (SELECT DISTINCT show_id FROM items WHERE show_id IS NOT NULL)').run(lib.id);
+  db.prepare('UPDATE libraries SET last_scan=? WHERE id=?').run(Date.now(), lib.id);
+}
+
+const AUDIO = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.wma', '.m4b']);
+const COVERS = ['cover', 'folder', 'front', 'album', 'albumart'];
+
+/** Radio library: audio files, tags read with ffprobe (only for new/changed files, 8 at a time). */
+async function scanRadio(db, lib, progress) {
+  const existing = new Map(db.prepare('SELECT path,mtime,size FROM items WHERE library_id=?').all(lib.id).map((r) => [r.path, r]));
+  const seen = new Set();
+  const probes = new Pool(8);
+  const ins = db.prepare(`INSERT INTO items (library_id,kind,path,title,year,runtime,probed,genres,actors,poster,mtime,size,artist,album,studios,plot)
+    VALUES (?,'track',?,?,?,?,1,?,'[]',?,?,?,?,?,'[]','') ON CONFLICT(path) DO UPDATE SET title=excluded.title,year=excluded.year,runtime=excluded.runtime,
+    genres=excluded.genres,poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,artist=excluded.artist,album=excluded.album`);
+  let batch = [];
+  const flush = () => { if (!batch.length) return; const b = batch; batch = []; tx(db, () => { for (const r of b) ins.run(...r); }); };
+
+  async function visit(dir) {
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    progress.dirs++;
+    const names = new Map(entries.filter((e) => e.isFile()).map((e) => [e.name.toLowerCase(), e.name]));
+    const cover = COVERS.flatMap((c) => IMG.map((x) => c + x)).map((n) => names.get(n)).find(Boolean);
+    await Promise.all(entries.filter((e) => e.isFile() && AUDIO.has(path.extname(e.name).toLowerCase())).map(async (e) => {
+      const full = path.join(dir, e.name);
+      seen.add(full); progress.files++;
+      const st = await fs.stat(full).catch(() => null);
+      if (!st) return;
+      const ex = existing.get(full);
+      if (ex && ex.mtime === st.mtimeMs && ex.size === st.size) return;
+      const info = await probes.run(() => probeTags(full));
+      if (!info || !(info.duration > 0)) return;
+      const t = info.tags;
+      const base = path.parse(e.name).name;
+      const m = base.match(/^(?:d+[s.-]+)?(.+?)s+-s+(.+)$/);
+      const year = parseInt((t.date || t.year || '').slice(0, 4), 10);
+      progress.changed++;
+      batch.push([lib.id, full, t.title || (m ? m[2].trim() : base.replace(/^d+[s.-]+/, '')), Number.isFinite(year) ? year : null, info.duration,
+        j(t.genre ? t.genre.split(/[;/]/).map((g) => g.trim()).filter(Boolean) : []), cover ? path.join(dir, cover) : null, st.mtimeMs, st.size,
+        t.artist || t.album_artist || (m ? m[1].trim() : ''), t.album || '']);
+      if (batch.length >= 300) flush();
+    }));
+    await Promise.all(entries.filter((e) => e.isDirectory() && !EXTRA_DIR.test(e.name)).map((d) => visit(path.join(dir, d.name))));
+  }
+  await visit(lib.path);
+  flush();
+  const gone = [...existing.keys()].filter((p) => !seen.has(p));
+  if (gone.length) { const del = db.prepare('DELETE FROM items WHERE path=?'); tx(db, () => { for (const p of gone) del.run(p); }); progress.removed = (progress.removed || 0) + gone.length; }
   db.prepare('UPDATE libraries SET last_scan=? WHERE id=?').run(Date.now(), lib.id);
 }
 

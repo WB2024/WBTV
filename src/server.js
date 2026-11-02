@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { cfg } from './config.js';
 import { openDb, getSettings, setSettings } from './db.js';
 import { scanLibrary } from './scanner.js';
-import { inferChannels } from './channels.js';
+import { inferChannels, syncLiveChannels } from './channels.js';
+import { checkStreams, isUrl } from './iptv.js';
 import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './scheduler.js';
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
@@ -38,6 +39,8 @@ async function runScan(libraryIds, auto = false) {
     await probePending(db, (done, total) => { scan.probe = `${done}/${total}`; });
     scan.phase = 'building channels';
     inferChannels(db);
+    syncLiveChannels(db);
+    checkStreams(db).then((n) => { if (n) { syncLiveChannels(db); } }).catch((e) => console.error('stream check failed', e));
     scan.phase = 'scheduling';
     // New media is picked up as the schedule rolls forward. Only channels that LOST programmes (their media vanished)
     // are re-planned, so a rescan never reshuffles the upcoming guide for everything else.
@@ -65,11 +68,21 @@ app.get('/api/libraries', () => db.prepare(`
 
 app.post('/api/libraries', async (req, reply) => {
   const { path: p, type, name } = req.body || {};
-  if (!['movies', 'tv', 'ads', 'ads_tv', 'ads_movies'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
-  const real = safePath(p);
-  if (!real || !fs.existsSync(real) || !fs.statSync(real).isDirectory()) return reply.code(400).send({ error: 'folder not found / not allowed' });
+  if (!['movies', 'tv', 'music', 'radio', 'iptv', 'ads', 'ads_tv', 'ads_movies'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
+  let real;
+  let label;
+  if (type === 'iptv') {
+    // a playlist / stream / YouTube URL, or a playlist file inside an allowed folder
+    const v = String(p || '').trim();
+    if (isUrl(v)) { real = v; try { label = new URL(v).hostname; } catch { label = v; } }
+    else { real = safePath(v); if (!real || !fs.existsSync(real) || !fs.statSync(real).isFile()) return reply.code(400).send({ error: 'enter an http(s) URL, or a playlist file path' }); label = path.basename(real); }
+  } else {
+    real = safePath(p);
+    if (!real || !fs.existsSync(real) || !fs.statSync(real).isDirectory()) return reply.code(400).send({ error: 'folder not found / not allowed' });
+    label = path.basename(real);
+  }
   try {
-    const r = db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run(name || path.basename(real), real, type);
+    const r = db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run(name || label, real, type);
     const id = Number(r.lastInsertRowid);
     runScan([id]); // fire and forget
     return { id };
@@ -78,7 +91,8 @@ app.post('/api/libraries', async (req, reply) => {
 
 app.delete('/api/libraries/:id', async (req) => {
   db.prepare('DELETE FROM libraries WHERE id=?').run(req.params.id);
-  inferChannels(db); await rescheduleFuture(db);
+  inferChannels(db);
+  syncLiveChannels(db); await rescheduleFuture(db);
   return { ok: true };
 });
 
@@ -145,15 +159,64 @@ app.get('/api/epg', (req) => {
     LEFT JOIN shows s ON s.id=i.show_id
     WHERE c.enabled=1 AND p.end > ? AND p.start < ? ORDER BY p.channel_id, p.start`).all(from, to);
   const programmes = {};
+  const kinds = new Map(db.prepare('SELECT id, kind FROM channels').all().map((c) => [c.id, c.kind]));
+  // music / radio guide entries are ~30 minutes of tracks: show the first track and list the next ones
+  const tracks = new Map();
+  const mrows = rows.filter((r) => ['music', 'radio'].includes(kinds.get(r.ch)));
+  if (mrows.length) {
+    const q = db.prepare("SELECT i.artist, i.title FROM blocks b JOIN items i ON i.id=b.item_id WHERE b.programme_id=? AND b.kind='content' ORDER BY b.start LIMIT 4");
+    for (const r of mrows) tracks.set(r.id, q.all(r.id));
+  }
   for (const r of rows) {
     (programmes[r.ch] ||= []).push({
       id: r.id, item: r.item_id, start: r.start, end: r.end, movie: r.kind === 'movie',
       title: r.show_title || r.title, subtitle: r.show_title ? r.title : '',
+      ...(tracks.has(r.id) ? (() => {
+        const t = tracks.get(r.id);
+        const nm = (x) => (x.artist ? `${x.artist} – ${x.title}` : x.title);
+        return { title: t[0] ? nm(t[0]) : r.title, subtitle: t.slice(1).map(nm).join(' · '), plot: t.map(nm).join('\n') };
+      })() : {}),
       season: r.season, episode: r.episode, year: r.year, plot: r.plot, rating: r.rating, mpaa: r.mpaa,
       genres: JSON.parse(r.genres || '[]'),
     });
   }
+  // live channels have no schedule: give them rolling two-hour "live" entries so they sit in the guide like everything else
+  const live = db.prepare("SELECT c.id, COALESCE(c.name_override, c.auto_name) AS name, s.grp FROM channels c LEFT JOIN live_streams s ON s.channel_id=c.id WHERE c.kind='live' AND c.enabled=1 AND c.item_count>0").all();
+  for (const c of live) {
+    const list = [];
+    for (let t = Math.floor(from / 7200) * 7200; t < to; t += 7200) {
+      list.push({ id: -(c.id * 1000 + list.length + 1), item: 0, start: t, end: t + 7200, movie: false, title: c.name, subtitle: c.grp || 'Live', season: null, episode: null,
+        year: null, plot: 'Live stream. There is no schedule: you join whatever is on right now.', rating: null, mpaa: '', genres: c.grp ? [c.grp] : [] });
+    }
+    programmes[c.id] = list;
+  }
   return { now, from, to, programmes };
+});
+
+// ---------------------------------------------------------------- live sources (IPTV playlists, streams, YouTube)
+const LIVE_PRESETS = [
+  { name: 'News channels (iptv-org)', url: 'https://iptv-org.github.io/iptv/categories/news.m3u', note: 'Community list of free public news streams. Hundreds of entries; many are dead, so WBTV health-checks them.' },
+  { name: 'UK channels (iptv-org)', url: 'https://iptv-org.github.io/iptv/countries/uk.m3u', note: 'Free public UK streams, including news.' },
+  { name: 'Music channels (iptv-org)', url: 'https://iptv-org.github.io/iptv/categories/music.m3u', note: 'Free public music TV and radio streams.' },
+  { name: 'Free-TV curated list', url: 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8', note: 'Curated free-to-air channels from many countries.' },
+];
+app.get('/api/live/presets', () => LIVE_PRESETS);
+app.get('/api/live/summary', () => db.prepare(`SELECT l.id, l.name, l.path,
+    COUNT(s.id) AS total, SUM(CASE WHEN s.alive=1 THEN 1 ELSE 0 END) AS alive, SUM(CASE WHEN s.alive=0 THEN 1 ELSE 0 END) AS dead,
+    SUM(CASE WHEN s.alive IS NULL THEN 1 ELSE 0 END) AS unchecked,
+    SUM(CASE WHEN c.enabled=1 AND c.item_count>0 THEN 1 ELSE 0 END) AS on_air
+  FROM libraries l LEFT JOIN live_streams s ON s.library_id=l.id LEFT JOIN channels c ON c.id=s.channel_id WHERE l.type='iptv' GROUP BY l.id`).all());
+// re-test streams that were found dead (they come back sometimes)
+app.post('/api/live/recheck', async () => {
+  db.prepare('UPDATE live_streams SET alive=NULL WHERE alive=0').run();
+  checkStreams(db).then(() => syncLiveChannels(db)).catch(() => {});
+  return { ok: true };
+});
+// switch every working stream on/off for one playlist
+app.post('/api/live/:lib/enable', async (req) => {
+  const on = req.body?.enabled ? 1 : 0;
+  const r = db.prepare("UPDATE channels SET enabled=? WHERE id IN (SELECT channel_id FROM live_streams WHERE library_id=? AND alive IS NOT 0)").run(on, req.params.lib);
+  return { changed: Number(r.changes) };
 });
 
 app.get('/api/items/:id', async (req, reply) => {
@@ -161,7 +224,7 @@ app.get('/api/items/:id', async (req, reply) => {
     FROM items i LEFT JOIN shows s ON s.id=i.show_id WHERE i.id=?`).get(req.params.id);
   if (!r) return reply.code(404).send();
   return {
-    id: r.id, title: r.title, showTitle: r.show_title, plot: r.plot || r.show_plot || '', year: r.year, rating: r.rating, mpaa: r.mpaa,
+    id: r.id, title: r.title, artist: r.artist, album: r.album, showTitle: r.show_title, plot: r.plot || r.show_plot || '', year: r.year, rating: r.rating, mpaa: r.mpaa,
     runtime: r.runtime, season: r.season, episode: r.episode, aired: r.aired, actors: JSON.parse(r.actors || '[]'),
     genres: [...new Set([...JSON.parse(r.genres || '[]'), ...JSON.parse(r.show_genres || '[]')])],
     studios: [...new Set([...JSON.parse(r.studios || '[]'), ...JSON.parse(r.show_studios || '[]')])],

@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 
-const ARRAYS = new Set(['studio', 'genre', 'actor', 'tag', 'video', 'audio', 'rating', 'thumb']);
+const ARRAYS = new Set(['studio', 'genre', 'actor', 'tag', 'video', 'audio', 'rating', 'thumb', 'artist']);
 const parser = new XMLParser({
   ignoreAttributes: true, parseTagValue: false, trimValues: true,
   isArray: (name) => ARRAYS.has(name),
@@ -31,6 +31,8 @@ export function parseNfo(text) {
       season: num(n.season),
       episode: num(n.episode),
       showtitle: str(n.showtitle),
+      artist: list(n.artist)[0] || '',
+      album: str(n.album),
       rating,
       mpaa: str(n.mpaa || n.certification),
       studios: list(n.studio),

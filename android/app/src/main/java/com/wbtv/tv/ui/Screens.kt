@@ -186,7 +186,7 @@ private fun Header(vm: AppVm, t: WbtvTheme, u: Float, pvW: Float, modifier: Modi
 
 @Composable
 private fun Toolbar(vm: AppVm, t: WbtvTheme, u: Float) {
-    val filters = ChannelFilter.entries
+    val filters = vm.visibleFilters
     Row(
         Modifier.fillMaxWidth().height((30f * u).dp).background(t.panel).padding(horizontal = 12.dp * u),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp * u),

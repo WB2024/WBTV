@@ -39,11 +39,14 @@ and (if you like) nostalgic ad breaks.
   - Shows with no (big enough) studio land on themed genre channels, e.g. *The Spooky Channel* for Horror.
   - Movie libraries only feed movie channels: genre channels (*Fright Night Cinema*), studio channels and decade channels (*1990s Cinema*).
   - Rename, renumber or disable any channel in Setup. Your edits survive rescans.
+- **Music channels.** Point WBTV at a folder of music videos and it builds Sky-style music channels by genre and decade (*Pop Videos*, *Rock Box*, *1990s Music TV*...), playing back to back with an "Artist – Title" lower-third on every track. Uses `<musicvideo>` NFOs, or just name files `Artist - Title.mp4`.
+- **Radio channels.** Point it at your audio files (mp3, flac, m4a, ogg...) and it builds radio stations by genre and decade (*Rock FM*, *Jazz FM*, *1990s Radio*...). The stream shows cover art, now-playing text and a live waveform. Tags are read from the files.
+- **Live TV, IPTV and news.** Add an M3U/M3U8 playlist (URL or file), a single HLS stream or a YouTube live link and each stream becomes a channel. Streams are health-checked so dead ones are hidden, and one-click suggestions (e.g. the public iptv-org news list) are built in. Live channels sit in the same guide, with pause/rewind and the same themes.
 - **Fast, incremental scans** that lean on NFO data (including `durationinseconds`, so ffprobe is rarely needed). Rescans run automatically on a timer.
 - **A real schedule.** Planned ahead and persisted, so the guide and the stream always agree, with history you can scroll back to. Every viewer of a channel shares one live stream.
 - **Ad breaks (optional).** Add YouTube / archive.org / direct links (downloaded once with yt-dlp) or point at local folders tagged *TV* or *Movies* (so trailers only play on movie channels). Long ad-break compilations are supported: each break plays a random chunk, like joining a recorded break in progress.
 - **"Coming up next" announcements.** After each programme a continuity slot plays: a clip from inside the next programme with a voice reading out what's on next and after that, using each programme's description (with sensible fallbacks), plus UP NEXT / AFTER THAT / LATER captions. The voice is generated locally with [Piper](https://github.com/rhasspy/piper): offline, free, no AI service. Two British voices (Alan and Jenny).
-- **Filter chips** above the guide: All channels, TV, Movies, Networks (studio channels) and Genres.
+- **Filter chips** above the guide: All channels, TV, Movies, Music, Radio, Live, Networks (studio channels) and Genres (chips with nothing in them are hidden).
 - **Pause and rewind live TV.** A rolling buffer on the server (10 minutes by default) lets you pause, skip back and return to live, on the web and on Android TV.
 - **Know how long is left.** The info banner shows a progress bar and "N min left" for the current programme, what's next, and how far behind live you are if you've paused.
 - **Always tunable.** Between programmes (ad breaks and announcements) a channel is still on air and you can still tune to it.
@@ -100,12 +103,23 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
   <img src="Images/Screenshots/web-setup-settings.jpg" alt="Settings" width="48%">
 </p>
 
-1. **Libraries**: add a folder and say what's in it. *TV Shows* and *Movies* feed channels; *Ads* folders feed ad breaks.
-2. **Channels**: check what was built, rename or renumber things, switch channels off.
-3. **Ads** (optional): turn on ad breaks, set how long and how often, add ad folders or links.
-4. **Announcements**: switch the "coming up next" voice-overs on or off, pick the voice (with a sample button), and choose how many programmes to mention and how long it may run.
-5. **Settings**: automatic rescans, the pause/rewind buffer, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
-6. **Appearance**: pick a theme, and choose whether selecting a programme jumps straight to fullscreen.
+1. **Libraries**: add a folder and say what's in it: *TV Shows*, *Movies*, *Music videos* or *Radio* feed channels; *Ads* folders feed ad breaks.
+2. **Live TV**: add an IPTV playlist, a stream or a YouTube live link (see below).
+3. **Channels**: check what was built (there is a search box), rename or renumber things, switch channels on and off.
+4. **Ads** (optional): turn on ad breaks, set how long and how often, add ad folders or links.
+5. **Announcements**: switch the "coming up next" voice-overs on or off, pick the voice (with a sample button), and choose how many programmes to mention and how long it may run.
+6. **Settings**: automatic rescans, the pause/rewind buffer, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
+7. **Appearance**: pick a theme, and choose whether selecting a programme jumps straight to fullscreen.
+
+### Music, radio and live channels
+
+| Add this | Library type | What you get |
+|---|---|---|
+| Music video folder | **Music videos** | Channels by genre/decade, numbered from 400, lower-third per track |
+| Audio folder (mp3/flac/m4a...) | **Radio** | Radio stations by genre/decade, numbered from 800, cover art + waveform |
+| `.m3u` / `.m3u8` playlist, single stream, or YouTube live URL | **Live TV** tab | One channel per stream, numbered from 600; dead streams hidden |
+
+Big playlists (more than 80 streams) start with the first 80 *working* channels switched on; use the **Channels** tab search box and *Enable shown* to switch on more, or *Enable all working* on the Live TV tab. The built-in suggestions point at public community lists of free streams (not run by WBTV), so availability changes and some are region-locked. YouTube live links are resolved with yt-dlp each time you tune in.
 
 Use the **filter chips** above the guide (or `[` and `]`) to show only TV channels, movie channels, networks or genres:
 

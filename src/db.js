@@ -20,7 +20,12 @@ CREATE TABLE IF NOT EXISTS items (
   season INTEGER, episode INTEGER, aired TEXT, rating REAL, mpaa TEXT,
   runtime REAL DEFAULT 0, probed INTEGER DEFAULT 0,
   studios TEXT DEFAULT '[]', genres TEXT DEFAULT '[]', actors TEXT DEFAULT '[]',
-  poster TEXT, mtime REAL, size REAL, nfo_mtime REAL, channel_id INTEGER
+  poster TEXT, mtime REAL, size REAL, nfo_mtime REAL, channel_id INTEGER, artist TEXT, album TEXT
+);
+CREATE TABLE IF NOT EXISTS live_streams (
+  id INTEGER PRIMARY KEY, library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+  name TEXT, url TEXT NOT NULL, grp TEXT, logo TEXT, tvg_id TEXT, src_kind TEXT DEFAULT 'hls',
+  alive INTEGER, checked REAL, channel_id INTEGER, UNIQUE(library_id, url)
 );
 CREATE INDEX IF NOT EXISTS idx_items_channel ON items(channel_id);
 CREATE INDEX IF NOT EXISTS idx_items_lib ON items(library_id);
@@ -80,6 +85,10 @@ function migrate(db) {
       INSERT INTO libraries_new SELECT id,name,path,type,last_scan FROM libraries; DROP TABLE libraries; ALTER TABLE libraries_new RENAME TO libraries;`);
     db.exec('COMMIT; PRAGMA foreign_keys=ON;');
   }
+  // older DBs: music/radio metadata on items
+  const icols = db.prepare('PRAGMA table_info(items)').all().map((c) => c.name);
+  if (!icols.includes('artist')) db.exec('ALTER TABLE items ADD COLUMN artist TEXT');
+  if (!icols.includes('album')) db.exec('ALTER TABLE items ADD COLUMN album TEXT');
   // older DBs: blocks.promo_id (announcement slots)
   if (!db.prepare('PRAGMA table_info(blocks)').all().some((c) => c.name === 'promo_id')) db.exec('ALTER TABLE blocks ADD COLUMN promo_id INTEGER');
   // older DBs: ads.kind

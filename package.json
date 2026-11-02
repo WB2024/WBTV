@@ -1,6 +1,6 @@
 {
   "name": "wbtv",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Self-hosted EPG / fake-live-TV for your own media library",
   "type": "module",
   "private": true,

@@ -34,6 +34,9 @@ const FILTERS = [
   ['all', 'All channels', () => true],
   ['tv', 'TV', (c) => c.kind === 'tv'],
   ['movie', 'Movies', (c) => c.kind === 'movie'],
+  ['music', 'Music', (c) => c.kind === 'music'],
+  ['radio', 'Radio', (c) => c.kind === 'radio'],
+  ['live', 'Live', (c) => c.kind === 'live'],
   ['network', 'Networks', (c) => (c.key || '').startsWith('tv:studio:')],
   ['genre', 'Genres', (c) => (c.key || '').includes(':genre:')],
 ];
@@ -50,12 +53,13 @@ function setFilter(id) {
   $('#guide').scrollTop = 0;
 }
 function cycleFilter(dir) {
-  const i = FILTERS.findIndex((f) => f[0] === S.filter);
-  setFilter(FILTERS[(i + dir + FILTERS.length) % FILTERS.length][0]);
+  const vis = FILTERS.filter(([id, , fn]) => id === 'all' || S.allChannels.some(fn));
+  const i = Math.max(0, vis.findIndex((f) => f[0] === S.filter));
+  setFilter(vis[(i + dir + vis.length) % vis.length][0]);
 }
 function renderToolbar() {
   $('#toolbar').replaceChildren(
-    FILTERS.map(([id, label, fn]) => h('button', { class: `chip ${id === S.filter ? 'on' : ''}`, onclick: () => setFilter(id) }, label, h('small', {}, String(S.allChannels.filter(fn).length)))),
+    FILTERS.filter(([id, , fn]) => id === 'all' || id === S.filter || S.allChannels.some(fn)).map(([id, label, fn]) => h('button', { class: `chip ${id === S.filter ? 'on' : ''}`, onclick: () => setFilter(id) }, label, h('small', {}, String(S.allChannels.filter(fn).length)))),
     h('span', { class: 'hint' }, '[ ] to switch'));
   $('#gname').textContent = (FILTERS.find((f) => f[0] === S.filter) || FILTERS[0])[1].toUpperCase();
 }
@@ -341,21 +345,22 @@ async function openSetup() {
 }
 function renderSetup() {
   const m = $('#modal');
-  const tabs = [['libraries', 'Libraries'], ['channels', 'Channels'], ['ads', 'Ads'], ['announce', 'Announcements'], ['settings', 'Settings'], ['appearance', 'Appearance']];
+  const tabs = [['libraries', 'Libraries'], ['live', 'Live TV'], ['channels', 'Channels'], ['ads', 'Ads'], ['announce', 'Announcements'], ['settings', 'Settings'], ['appearance', 'Appearance']];
   const body = h('div', { class: 'body' });
   m.replaceChildren(h('div', { class: 'dlg' },
     h('header', {}, h('img', { src: '/img/logo.png', alt: 'WBTV', style: 'height:30px;margin-right:10px' }), h('b', { style: 'margin-right:12px' }, 'Setup'),
       tabs.map(([k, l]) => h('button', { class: `tab ${k === setupTab ? 'on' : ''}`, onclick: () => { setupTab = k; renderSetup(); } }, l)),
       h('button', { class: 'x', onclick: closeModal }, 'Close ✕')), body));
   clearInterval(pollTimer);
-  ({ libraries: tabLibraries, channels: tabChannels, ads: tabAds, announce: tabAnnounce, settings: tabSettings, appearance: tabAppearance })[setupTab](body);
+  ({ libraries: tabLibraries, live: tabLive, channels: tabChannels, ads: tabAds, announce: tabAnnounce, settings: tabSettings, appearance: tabAppearance })[setupTab](body);
 }
 
 const LIB_TYPES = {
-  tv: 'TV Shows', movies: 'Movies',
+  tv: 'TV Shows', movies: 'Movies', music: 'Music videos', radio: 'Radio (audio files)', iptv: 'Live TV / IPTV',
   ads_tv: 'Ads – TV channels only', ads_movies: 'Ads / trailers – Movie channels only', ads: 'Ads – any channel',
 };
 const isAdsLib = (l) => l.type.startsWith('ads');
+const isMediaLib = (l) => !isAdsLib(l) && l.type !== 'iptv';
 
 /** scan status + progress bar; `onIdle` runs when no scan is running */
 function scanStatus(box, onIdle) {
@@ -378,7 +383,7 @@ function libTable(libs, reload, poll) {
   return h('table', {},
     h('tr', {}, ['Name', 'Path', 'Type', 'Items', ''].map((t) => h('th', {}, t))),
     libs.map((l) => h('tr', {}, h('td', {}, l.name), h('td', { style: 'word-break:break-all' }, l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
-      h('td', {}, String(isAdsLib(l) ? l.ads : l.items)),
+      h('td', {}, String(isAdsLib(l) ? l.ads : l.type === 'iptv' ? '' : l.items)),
       h('td', {}, h('button', { class: 'sm', onclick: async () => { await api('/api/scan', { method: 'POST', body: { libraryId: l.id } }); poll(); } }, 'Scan'), ' ',
         h('button', { class: 'sm danger', onclick: async () => { if (confirm(`Remove "${l.name}" from WBTV? (files are not touched)`)) { await api(`/api/libraries/${l.id}`, { method: 'DELETE' }); reload(); } } }, 'Remove')))));
 }
@@ -386,10 +391,11 @@ function libTable(libs, reload, poll) {
 async function tabLibraries(body) {
   const status = h('div', {});
   const list = h('div', {});
-  body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies']));
+  body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'radio']),
+    h('p', { class: 'note' }, 'Music videos: video files with an Artist - Title name (or a <musicvideo> NFO). Radio: audio files; tags are read from the files. Both build themed channels automatically. Live TV and news streams are on the Live TV tab.'));
   const poll = () => scanStatus(status, reload);
   async function reload() {
-    const libs = (await api('/api/libraries')).filter((l) => !isAdsLib(l));
+    const libs = (await api('/api/libraries')).filter(isMediaLib);
     list.replaceChildren(libTable(libs, reload, poll),
       h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/scan', { method: 'POST', body: {} }); poll(); } }, 'Scan all libraries')));
   }
@@ -423,18 +429,61 @@ function addLibraryForm(onAdded, types) {
     msg);
 }
 
+async function tabLive(body) {
+  const [presets, sum, libs] = await Promise.all([api('/api/live/presets'), api('/api/live/summary'), api('/api/libraries')]);
+  const status = h('div', {});
+  const name = h('input', { type: 'text', placeholder: 'Name (optional)', style: 'width:200px' });
+  const url = h('input', { type: 'text', placeholder: 'Playlist (.m3u/.m3u8), single stream, or YouTube live link', style: 'flex:1;min-width:300px' });
+  const msg = h('span', { class: 'note' });
+  const add = async (u, n) => {
+    try { await api('/api/libraries', { method: 'POST', body: { path: u, type: 'iptv', name: n || undefined } }); msg.textContent = 'Added. Fetching and testing streams…'; scanStatus(status, () => setTimeout(renderSetup, 800)); }
+    catch (e) { msg.textContent = e.message; msg.className = 'err'; }
+  };
+  const have = new Set(libs.map((l) => l.path));
+  body.append(
+    status,
+    h('p', { class: 'note' }, 'Live channels (news, music TV, radio stations, any HLS stream) have no schedule: you join what is on right now. WBTV re-encodes them to match everything else and tests each stream so dead ones are hidden.'),
+    h('h3', { style: 'margin-top:0' }, 'Add a playlist or stream'),
+    h('div', { class: 'row2' }, name, url, h('button', { onclick: () => add(url.value.trim(), name.value.trim()) }, 'Add')), msg,
+    h('h3', {}, 'Suggested sources'),
+    h('table', {}, presets.map((p) => h('tr', {}, h('td', {}, h('b', {}, p.name), h('div', { class: 'note' }, p.note)),
+      h('td', { style: 'width:90px' }, have.has(p.url) ? h('span', { class: 'ok' }, 'added') : h('button', { class: 'sm', onclick: () => add(p.url, p.name) }, 'Add'))))),
+    h('p', { class: 'note' }, 'These are public community lists of free streams, not run by WBTV; availability changes and some streams are dead or region-locked. You can also paste a YouTube live URL (e.g. a news channel\'s live stream).'),
+    h('h3', {}, 'Your live sources'),
+    sum.length ? h('table', {}, h('tr', {}, ['Name', 'Streams', 'Working', 'Dead', 'On air', ''].map((t) => h('th', {}, t))),
+      sum.map((l) => h('tr', {}, h('td', { style: 'word-break:break-all' }, l.name), h('td', {}, String(l.total)),
+        h('td', {}, String(l.alive ?? 0) + (l.unchecked ? ` (+${l.unchecked} testing…)` : '')), h('td', {}, String(l.dead ?? 0)), h('td', {}, String(l.on_air ?? 0)),
+        h('td', {}, h('button', { class: 'sm', onclick: async () => { await api(`/api/live/${l.id}/enable`, { method: 'POST', body: { enabled: true } }); renderSetup(); } }, 'Enable all working'), ' ',
+          h('button', { class: 'sm', onclick: async () => { await api(`/api/live/${l.id}/enable`, { method: 'POST', body: { enabled: false } }); renderSetup(); } }, 'Disable all'), ' ',
+          h('button', { class: 'sm', onclick: async () => { await api('/api/scan', { method: 'POST', body: { libraryId: l.id } }); scanStatus(status, () => setTimeout(renderSetup, 800)); } }, 'Refresh'), ' ',
+          h('button', { class: 'sm danger', onclick: async () => { if (confirm('Remove this source and its channels?')) { await api(`/api/libraries/${l.id}`, { method: 'DELETE' }); renderSetup(); } } }, 'Remove'))))) : h('p', { class: 'note' }, 'None yet.'),
+    h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/live/recheck', { method: 'POST', body: {} }); msg.textContent = 'Re-testing dead streams in the background…'; setTimeout(renderSetup, 4000); } }, 'Re-test dead streams'),
+      h('span', { class: 'note' }, 'Big playlists start with the first 80 working channels on. Switch more on in the Channels tab (use the search box).')));
+  if (sum.some((l) => l.unchecked)) pollTimer = setInterval(() => { if (setupTab === 'live') renderSetup(); }, 6000);
+}
+
 async function tabChannels(body) {
   const chans = await api('/api/channels?all=1');
   const rows = chans.map((c) => {
     const patch = (b) => api(`/api/channels/${c.id}`, { method: 'PATCH', body: b }).catch((e) => alert(e.message));
-    return h('tr', { style: c.item_count ? '' : 'opacity:.45' },
+    return h('tr', { class: 'chrow', 'data-n': `${c.name} ${c.number} ${c.key}`.toLowerCase(), 'data-id': c.id, 'data-items': c.item_count, style: c.item_count ? '' : 'opacity:.45' },
       h('td', {}, h('input', { type: 'number', value: c.number ?? '', min: 1, onchange: (e) => patch({ number: Number(e.target.value) }) })),
       h('td', {}, h('input', { type: 'text', value: c.name, style: 'width:100%', onchange: (e) => patch({ name: e.target.value === c.auto_name ? '' : e.target.value }) })),
-      h('td', {}, c.kind === 'movie' ? 'Movies' : 'TV'), h('td', {}, String(c.item_count)),
+      h('td', {}, ({ movie: 'Movies', music: 'Music', radio: 'Radio', live: 'Live' }[c.kind] || 'TV')), h('td', {}, c.kind === 'live' ? (c.item_count ? 'on air' : 'dead') : String(c.item_count)),
       h('td', { class: 'note' }, c.key.replace(/^(tv|movie):/, '')),
       h('td', {}, h('input', { type: 'checkbox', checked: !!c.enabled, onchange: (e) => patch({ enabled: e.target.checked }) })));
   });
+  const q = h('input', { type: 'text', placeholder: 'Search channels…', style: 'min-width:220px' });
+  const apply = () => { const t = q.value.toLowerCase(); for (const r of document.querySelectorAll('.chrow')) r.style.display = !t || r.dataset.n.includes(t) ? '' : 'none'; };
+  q.addEventListener('input', apply);
+  const bulk = (on) => async () => {
+    const shown = [...document.querySelectorAll('.chrow')].filter((r) => r.style.display !== 'none' && r.dataset.items !== '0');
+    if (shown.length > 60 && !confirm(`Switch ${on ? 'on' : 'off'} ${shown.length} channels?`)) return;
+    for (const r of shown) await api(`/api/channels/${r.dataset.id}`, { method: 'PATCH', body: { enabled: on } }).catch(() => {});
+    renderSetup();
+  };
   body.append(
+    h('div', { class: 'row2' }, q, h('button', { onclick: bulk(true) }, 'Enable shown'), h('button', { onclick: bulk(false) }, 'Disable shown')),
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/channels/rebuild', { method: 'POST', body: {} }); renderSetup(); } }, 'Re-infer channels'),
       h('span', { class: 'note' }, `${chans.filter((c) => c.item_count).length} channels. Rebuilt automatically after every scan; your renames and numbers are kept. How many get created is controlled in the Settings tab.`)),
     chans.length ? h('table', {}, h('tr', {}, ['No.', 'Name', 'Type', 'Items', 'Source', 'On'].map((t) => h('th', {}, t))), rows) : h('p', { class: 'note' }, 'No channels yet — add a library first.'));

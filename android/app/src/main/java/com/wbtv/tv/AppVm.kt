@@ -61,6 +61,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     var serverSettings by mutableStateOf<JsonObject?>(null)
     var settingsNote by mutableStateOf<String?>(null)
 
+    /** Chips that have at least one channel (All is always there), so the row never overflows the screen. */
+    val visibleFilters: List<ChannelFilter> get() = ChannelFilter.entries.filter { it == ChannelFilter.ALL || it == filter || allChannels.any(it.test) }
+
     val spanSec get() = SPAN_MIN * 60.0
     private var nav = GuideNav(emptyList(), emptyMap())
     private var lastChannelId: Int? = null
@@ -353,7 +356,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             KeyEvent.KEYCODE_DPAD_UP -> {
                 val up = nav.up(sel, now)
                 // already on the top row: move up into the filter chips / Settings button
-                if (up.ch == sel.ch) { zone = Zone.TOOLBAR; toolbarIdx = filter.ordinal } else setSel(up, false)
+                if (up.ch == sel.ch) { zone = Zone.TOOLBAR; toolbarIdx = visibleFilters.indexOf(filter).coerceAtLeast(0) } else setSel(up, false)
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> setSel(nav.down(sel, now), false)
             KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> setSel(nav.vertical(sel, -PAGE, now), false)
@@ -379,7 +382,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     /** Keys while the focus is on the filter chips (and the Settings button) above the grid. */
     private fun toolbarKey(code: Int, repeat: Int): Boolean {
-        val filters = ChannelFilter.entries
+        val filters = visibleFilters
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT -> toolbarIdx = (toolbarIdx - 1).coerceAtLeast(0)
             KeyEvent.KEYCODE_DPAD_RIGHT -> toolbarIdx = (toolbarIdx + 1).coerceAtMost(filters.size)

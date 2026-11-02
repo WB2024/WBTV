@@ -20,7 +20,20 @@ export async function probe(file) {
   try {
     const j = JSON.parse(r.out);
     const duration = parseFloat(j.format?.duration);
-    return { duration: Number.isFinite(duration) ? duration : 0, hasAudio: (j.streams || []).some((s) => s.codec_type === 'audio') };
+    return { duration: Number.isFinite(duration) ? duration : 0, hasAudio: (j.streams || []).some((s) => s.codec_type === 'audio'), hasVideo: (j.streams || []).some((s) => s.codec_type === 'video') };
+  } catch { return null; }
+}
+
+/** Audio file -> { duration, tags:{title,artist,album,genre,date} } (tag keys lower-cased) */
+export async function probeTags(file) {
+  const r = await run(cfg.ffprobe, ['-v', 'error', '-show_entries', 'format=duration:format_tags', '-of', 'json', file], { timeout: 30000 });
+  if (r.code !== 0) return null;
+  try {
+    const f = JSON.parse(r.out).format || {};
+    const tags = {};
+    for (const [k, v] of Object.entries(f.tags || {})) tags[k.toLowerCase()] = String(v);
+    const duration = parseFloat(f.duration);
+    return { duration: Number.isFinite(duration) ? duration : 0, tags };
   } catch { return null; }
 }
 

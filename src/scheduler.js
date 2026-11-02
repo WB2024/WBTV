@@ -96,11 +96,12 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
   if (t == null || t < floorHist) t = Math.floor(floorHist / 300) * 300;
   if (t >= horizon) return;
 
-  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres,
+  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres, i.artist,
       s.title AS show_title, s.plot AS show_plot
     FROM items i JOIN channel_items ci ON ci.item_id=i.id LEFT JOIN shows s ON s.id=i.show_id
     WHERE ci.channel_id=? AND i.runtime>0`).all(ch.id);
   if (!items.length) return;
+  if (ch.kind === 'music' || ch.kind === 'radio') return extendRotation(db, ch, items, t, horizon);
   const pick = makePicker(db, ch, items);
 
   // "coming up next" announcements need to know the next few programmes, so we plan a few items ahead
@@ -177,6 +178,45 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
   });
 }
 
+const ROTATION = 30 * 60; // music/radio: one guide entry per half hour of non-stop tracks
+
+/**
+ * Music video and radio channels play back to back, with no adverts or announcements. Each guide entry is a ~30 minute
+ * rotation made of many tracks (one block per track), so the guide stays readable and the stream shows what is playing.
+ */
+function extendRotation(db, ch, items, t, horizon) {
+  const recent = db.prepare("SELECT item_id FROM blocks WHERE channel_id=? AND kind='content' ORDER BY start DESC LIMIT 400").all(ch.id).map((r) => r.item_id).reverse();
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const insProg = db.prepare('INSERT INTO programmes(channel_id,item_id,start,end) VALUES(?,?,?,?)');
+  const insBlock = db.prepare("INSERT INTO blocks(channel_id,programme_id,kind,item_id,ad_id,in_point,start,end) VALUES(?,?,'content',?,NULL,0,?,?)");
+  let lastArtist = recent.length ? byId.get(recent[recent.length - 1])?.artist : null;
+  const memory = Math.min(Math.floor(items.length / 2), 200);
+
+  const pickTrack = () => {
+    const avoid = new Set(memory > 0 ? recent.slice(-memory) : []);
+    let pool = items.filter((i) => !avoid.has(i.id));
+    if (!pool.length) pool = items;
+    let it = pickOne(pool);
+    for (let k = 0; k < 6 && it.artist && it.artist === lastArtist && pool.length > 1; k++) it = pickOne(pool); // not the same artist twice in a row
+    recent.push(it.id); lastArtist = it.artist;
+    return it;
+  };
+
+  tx(db, () => {
+    while (t < horizon) {
+      const start = t;
+      let first = null;
+      const progId = Number(insProg.run(ch.id, items[0].id, start, start).lastInsertRowid);
+      while (t - start < ROTATION) {
+        const tr = pickTrack();
+        if (!first) first = tr;
+        insBlock.run(ch.id, progId, tr.id, t, t + tr.runtime); t += tr.runtime;
+      }
+      db.prepare('UPDATE programmes SET item_id=?, end=? WHERE id=?').run(first.id, t, progId);
+    }
+  });
+}
+
 function planContext(db) {
   const settings = getSettings(db);
   const ads = settings.adsEnabled
@@ -197,7 +237,7 @@ function prune(db, now) {
 
 /** Synchronous, for ONE channel (used by a broadcaster that finds a hole in its schedule). */
 export function ensureChannelSchedule(db, channelId, now = Date.now() / 1000) {
-  const c = db.prepare('SELECT id, kind FROM channels WHERE id=? AND enabled=1 AND item_count>0').get(channelId);
+  const c = db.prepare("SELECT id, kind FROM channels WHERE id=? AND enabled=1 AND item_count>0 AND kind<>'live'").get(channelId);
   if (c) extendOne(db, c, planContext(db), now);
 }
 
@@ -208,7 +248,7 @@ export function ensureSchedule(db, now = Date.now() / 1000) {
   planning = (async () => {
     try {
       const ctx = planContext(db);
-      const chans = db.prepare('SELECT id, kind FROM channels WHERE enabled=1 AND item_count>0').all();
+      const chans = db.prepare("SELECT id, kind FROM channels WHERE enabled=1 AND item_count>0 AND kind<>'live'").all();
       for (const c of chans) {
         extendOne(db, c, ctx, now);
         await new Promise((r) => setImmediate(r));
@@ -231,7 +271,8 @@ export async function rescheduleFuture(db, now = Date.now() / 1000, channelIds =
 }
 
 export function getBlockAt(db, channelId, t) {
-  return db.prepare(`SELECT b.*, COALESCE(i.path, a.file) AS file FROM blocks b
+  return db.prepare(`SELECT b.*, COALESCE(i.path, a.file) AS file, i.kind AS item_kind, i.title AS m_title, i.artist AS m_artist, i.album AS m_album,
+      i.poster AS m_poster, i.year AS m_year FROM blocks b
     LEFT JOIN items i ON i.id = b.item_id LEFT JOIN ads a ON a.id = b.ad_id
     WHERE b.channel_id=? AND b.start<=? AND b.end>? ORDER BY b.start DESC LIMIT 1`).get(channelId, t, t);
 }

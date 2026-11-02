@@ -29,7 +29,28 @@ function genreChannelName(kind, genre) {
   const map = kind === 'movie' ? MOVIE_GENRE_NAMES : TV_GENRE_NAMES;
   return map[genre.toLowerCase()] || `${title(genre)} ${kind === 'movie' ? 'Movies' : 'TV'}`;
 }
-function decadeName(d) {
+const MUSIC_NAMES = [
+  ['hip', 'Urban Beats'], ['rap', 'Urban Beats'], ['r&b', 'Smooth Grooves'], ['soul', 'Smooth Grooves'], ['funk', 'Smooth Grooves'],
+  ['dance', 'Dance Floor'], ['electro', 'Dance Floor'], ['house', 'Dance Floor'], ['techno', 'Dance Floor'], ['trance', 'Dance Floor'],
+  ['metal', 'Metal Mayhem'], ['punk', 'Punk Rocks'], ['indie', 'Alt Tracks'], ['alternative', 'Alt Tracks'], ['rock', 'Rock Box'],
+  ['pop', 'Pop Videos'], ['country', 'Country Roads'], ['jazz', 'Jazz Lounge'], ['blues', 'Blues Cafe'], ['classical', 'Classical Hall'],
+  ['reggae', 'Island Vibes'], ['folk', 'Folk Fire'], ['soundtrack', 'Screen Scores'], ['latin', 'Latin Heat'], ['k-pop', 'K-Pop Zone'],
+];
+const RADIO_NAMES = {
+  'Urban Beats': 'Urban FM', 'Smooth Grooves': 'Smooth FM', 'Dance Floor': 'Dance FM', 'Metal Mayhem': 'Metal FM', 'Punk Rocks': 'Punk FM',
+  'Alt Tracks': 'Alt FM', 'Rock Box': 'Rock FM', 'Pop Videos': 'Pop FM', 'Country Roads': 'Country FM', 'Jazz Lounge': 'Jazz FM',
+  'Blues Cafe': 'Blues FM', 'Classical Hall': 'Classical FM', 'Island Vibes': 'Reggae FM', 'Folk Fire': 'Folk FM', 'Screen Scores': 'Soundtrack FM',
+  'Latin Heat': 'Latin FM', 'K-Pop Zone': 'K-Pop FM',
+};
+function musicGenreName(kind, genre) {
+  const g = genre.toLowerCase();
+  const hit = MUSIC_NAMES.find(([k]) => g === k || g.includes(k));
+  if (kind === 'music') return hit ? hit[1] : `${title(genre)} Music TV`;
+  return hit ? RADIO_NAMES[hit[1]] : `${title(genre)} FM`;
+}
+function decadeName(d, kind = 'movie') {
+  if (kind === 'music') return d < 1970 ? 'Golden Oldies TV' : `${d}s Music TV`;
+  if (kind === 'radio') return d < 1970 ? 'Golden Oldies FM' : `${d}s Radio`;
   if (d < 1960) return 'Golden Age Cinema';
   return `${d}s Cinema`;
 }
@@ -65,16 +86,18 @@ export function inferChannels(db) {
   const minSec = st.minChannelMinutes * 60;
 
   const rows = db.prepare(`
-    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, s.studios AS s_studios, s.genres AS s_genres
+    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, s.studios AS s_studios, s.genres AS s_genres
     FROM items i LEFT JOIN shows s ON s.id = i.show_id WHERE i.runtime > 0`).all();
 
   // A "unit" is a whole show (all its episodes stay together) or a single movie.
   const units = new Map();
   for (const r of rows) {
-    const key = r.kind === 'movie' ? `m${r.id}` : `s${r.show_id}`;
+    const solo = r.kind === 'movie' || r.kind === 'musicvideo' || r.kind === 'track';
+    const key = solo ? `m${r.id}` : `s${r.show_id}`;
+    const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : 'tv';
     let u = units.get(key);
     if (!u) {
-      u = { kind: r.kind === 'movie' ? 'movie' : 'tv', ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map() };
+      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map() };
       units.set(key, u);
     }
     u.ids.push(r.id); u.seconds += r.runtime;
@@ -85,12 +108,14 @@ export function inferChannels(db) {
   }
 
   // popularity of each tag (total seconds, and film counts for movie studios)
-  const secs = { tv: { studio: new Map(), genre: new Map() }, movie: { genre: new Map(), studio: new Map(), decade: new Map() } };
+  const secs = { tv: { studio: new Map(), genre: new Map() }, movie: { genre: new Map(), studio: new Map(), decade: new Map() },
+    music: { genre: new Map(), decade: new Map() }, radio: { genre: new Map(), decade: new Map() } };
   const films = new Map();
   const bump = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
   for (const u of units.values()) {
     if (u.kind === 'tv') for (const k of u.studios.keys()) bump(secs.tv.studio, k, u.seconds);
     for (const k of u.genres.keys()) bump(secs[u.kind].genre, k, u.seconds);
+    if (u.kind === 'music' || u.kind === 'radio') { if (u.year) bump(secs[u.kind].decade, Math.floor(u.year / 10) * 10, u.seconds); }
     if (u.kind === 'movie') {
       for (const k of u.studios.keys()) bump(films, k, 1);
       if (u.year) bump(secs.movie.decade, Math.floor(u.year / 10) * 10, u.seconds);
@@ -116,6 +141,16 @@ export function inferChannels(db) {
         }
       }
       if (!placed) put('tv:misc', 'tv', 'WBTV Variety', u.ids);
+    } else if (u.kind === 'music' || u.kind === 'radio') {
+      for (const [k, name] of u.genres) {
+        if ((secs[u.kind].genre.get(k) || 0) >= minSec) { put(`${u.kind}:genre:${k}`, u.kind, musicGenreName(u.kind, name), u.ids); placed = true; }
+      }
+      if (u.year) {
+        const d = Math.floor(u.year / 10) * 10;
+        const key = d < 1970 ? `${u.kind}:decade:oldies` : `${u.kind}:decade:${d}`;
+        if ((secs[u.kind].decade.get(d) || 0) >= minSec || d < 1970) { put(key, u.kind, decadeName(d, u.kind), u.ids); placed = true; }
+      }
+      if (!placed) put(`${u.kind}:misc`, u.kind, u.kind === 'music' ? 'WBTV Music' : 'WBTV Radio', u.ids);
     } else {
       for (const [k, name] of u.genres) {
         if ((secs.movie.genre.get(k) || 0) >= minSec) { put(`movie:genre:${k}`, 'movie', genreChannelName('movie', name), u.ids); placed = true; }
@@ -141,7 +176,9 @@ export function inferChannels(db) {
   tx(db, () => {
     const existing = new Map(db.prepare('SELECT * FROM channels').all().map((c) => [c.key, c]));
     const taken = new Set([...existing.values()].map((c) => c.number).filter((n) => n != null));
-    let nextNum = Math.max(10, ...taken, 0) + 1;
+    let nextNum = Math.max(10, ...[...taken].filter((n) => n < 300), 0) + 1;
+    const BASE = { music: 400, live: 600, radio: 800 };
+    const freeFrom = (n) => { while (taken.has(n)) n++; return n; };
     const ins = db.prepare('INSERT INTO channels(key,kind,auto_name,number,enabled,item_count) VALUES(?,?,?,?,1,0)');
     const upd = db.prepare('UPDATE channels SET auto_name=?, item_count=? WHERE id=?');
     db.exec('DELETE FROM channel_items');
@@ -154,13 +191,52 @@ export function inferChannels(db) {
       if (!ch) {
         let num = null;
         for (const [re, n] of PREFERRED_NUMBERS) if (re.test(c.name) && !taken.has(n)) num = n;
-        if (num == null) num = nextNum++;
+        if (num == null) { if (BASE[c.kind]) num = freeFrom(BASE[c.kind]); else { nextNum = freeFrom(nextNum); num = nextNum++; } }
         taken.add(num);
         ch = { id: Number(ins.run(key, c.kind, c.name, num).lastInsertRowid) };
       }
       upd.run(c.name, c.ids.size, ch.id);
       for (const id of c.ids) link.run(ch.id, id);
     }
-    for (const [key, ch] of existing) if (!assign.has(key)) upd.run(ch.auto_name, 0, ch.id); // emptied channels
+    for (const [key, ch] of existing) if (!assign.has(key) && !key.startsWith('live:')) upd.run(ch.auto_name, 0, ch.id); // emptied channels (live ones: syncLiveChannels)
+  });
+}
+
+/**
+ * One channel per live stream (IPTV entries, single HLS streams, YouTube live). They have no schedule, so item_count is just
+ * 1 (on air) or 0 (the health check found it dead). Big playlists start switched off, then the first working ones are enabled.
+ */
+export function syncLiveChannels(db) {
+  const CAP = 80;
+  const streams = db.prepare('SELECT s.*, (SELECT COUNT(*) FROM live_streams x WHERE x.library_id=s.library_id) AS total FROM live_streams s ORDER BY s.library_id, s.grp, s.name').all();
+  tx(db, () => {
+    const existing = new Map(db.prepare("SELECT * FROM channels WHERE key LIKE 'live:%'").all().map((c) => [c.key, c]));
+    const taken = new Set(db.prepare('SELECT number FROM channels WHERE number IS NOT NULL').all().map((r) => r.number));
+    const ins = db.prepare("INSERT INTO channels(key,kind,auto_name,number,enabled,item_count) VALUES(?,'live',?,?,?,?)");
+    const upd = db.prepare('UPDATE channels SET auto_name=?, item_count=? WHERE id=?');
+    const link = db.prepare('UPDATE live_streams SET channel_id=? WHERE id=?');
+    const aliveIds = new Map();
+    let n = 600;
+    for (const st of streams) {
+      const key = `live:${st.id}`;
+      const count = st.alive === 0 ? 0 : 1;
+      let ch = existing.get(key);
+      if (!ch) {
+        while (taken.has(n)) n++;
+        taken.add(n);
+        ch = { id: Number(ins.run(key, st.name, n, st.total <= CAP ? 1 : 0, count).lastInsertRowid) };
+      } else upd.run(st.name, count, ch.id);
+      link.run(ch.id, st.id);
+      if (st.alive === 1) aliveIds.set(st.library_id, [...(aliveIds.get(st.library_id) || []), ch.id]);
+    }
+    const flag = db.prepare('SELECT 1 FROM settings WHERE key=?');
+    for (const [lib, ids] of aliveIds) {
+      const total = streams.find((x) => x.library_id === lib)?.total || 0;
+      if (total <= CAP || flag.get(`live_autoenabled_${lib}`) || streams.some((x) => x.library_id === lib && x.alive == null)) continue;
+      for (const id of ids.slice(0, CAP)) db.prepare('UPDATE channels SET enabled=1 WHERE id=?').run(id);
+      db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(`live_autoenabled_${lib}`, '1');
+    }
+    const keep = new Set(streams.map((x) => `live:${x.id}`));
+    for (const [key, ch] of existing) if (!keep.has(key)) db.prepare('UPDATE channels SET item_count=0 WHERE id=?').run(ch.id);
   });
 }
