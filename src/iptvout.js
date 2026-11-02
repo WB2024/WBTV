@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { cfg } from './config.js';
+import { logoFile } from './logos.js';
 
 const esc = (s) => String(s ?? '').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 const attr = (s) => String(s ?? '').replace(/"/g, "'").replace(/[\r\n]+/g, ' ');
@@ -27,7 +28,7 @@ export function registerIptvOut(app, db, getBroadcaster, getToken = () => '') {
     const base = baseUrl(req);
     let out = `#EXTM3U url-tvg="${base}/iptv/epg.xml${tq()}"\n`;
     for (const c of channels()) {
-      out += `#EXTINF:-1 tvg-id="wbtv.${c.id}" tvg-chno="${c.number}" tvg-name="${attr(c.name)}" group-title="${groupOf[c.kind] || 'TV'}",${attr(c.name)}\n`;
+      out += `#EXTINF:-1 tvg-id="wbtv.${c.id}" tvg-chno="${c.number}" tvg-name="${attr(c.name)}"${logoFile(c.id) ? ` tvg-logo="${base}/api/channels/${c.id}/logo${tq()}"` : ''} group-title="${groupOf[c.kind] || 'TV'}",${attr(c.name)}\n`;
       out += `${base}/live/${c.id}/index.m3u8${tq()}\n`;
     }
     return reply.type('audio/x-mpegurl').send(out);
@@ -39,7 +40,7 @@ export function registerIptvOut(app, db, getBroadcaster, getToken = () => '') {
     const epg = JSON.parse(res.body);
     const chs = channels();
     let x = '<?xml version="1.0" encoding="UTF-8"?>\n<tv generator-info-name="WBTV">\n';
-    for (const c of chs) x += `<channel id="wbtv.${c.id}"><display-name>${esc(c.name)}</display-name><display-name>${c.number}</display-name></channel>\n`;
+    for (const c of chs) x += `<channel id="wbtv.${c.id}"><display-name>${esc(c.name)}</display-name><display-name>${c.number}</display-name>${logoFile(c.id) ? `<icon src="${esc(`${baseUrl(req)}/api/channels/${c.id}/logo${tq()}`)}"/>` : ''}</channel>\n`;
     for (const c of chs) {
       for (const p of epg.programmes[c.id] || []) {
         x += `<programme start="${xmltvTime(p.start)}" stop="${xmltvTime(p.end)}" channel="wbtv.${c.id}">`;

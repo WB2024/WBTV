@@ -463,6 +463,27 @@ async function tabLive(body) {
   if (sum.some((l) => l.unchecked)) pollTimer = setInterval(() => { if (setupTab === 'live') renderSetup(); }, 6000);
 }
 
+function logoCell(c) {
+  const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', style: 'display:none' });
+  const cell = h('span', {});
+  const draw = (has) => {
+    cell.replaceChildren(
+      has ? h('img', { src: `/api/channels/${c.id}/logo?t=${Date.now()}`, style: 'height:22px;vertical-align:middle;margin-right:6px', title: 'Shown on screen in the corner of programmes' }) : null,
+      h('button', { onclick: () => file.click() }, has ? 'Change' : 'Add'),
+      has ? h('button', { onclick: async () => { await api(`/api/channels/${c.id}/logo`, { method: 'DELETE' }); draw(false); } }, '✕') : null);
+  };
+  file.addEventListener('change', async () => {
+    const f = file.files[0];
+    if (!f) return;
+    const r = await fetch(`/api/channels/${c.id}/logo`, { method: 'PUT', headers: { 'Content-Type': f.type }, body: f });
+    if (r.status === 401) return location.reload();
+    if (!r.ok) return alert((await r.json().catch(() => ({}))).error || 'Upload failed');
+    draw(true);
+  });
+  draw(c.logo);
+  return [cell, file];
+}
+
 async function tabChannels(body) {
   const chans = await api('/api/channels?all=1');
   const rows = chans.map((c) => {
@@ -472,7 +493,8 @@ async function tabChannels(body) {
       h('td', {}, h('input', { type: 'text', value: c.name, style: 'width:100%', onchange: (e) => patch({ name: e.target.value === c.auto_name ? '' : e.target.value }) })),
       h('td', {}, ({ movie: 'Movies', music: 'Music', radio: 'Radio', live: 'Live' }[c.kind] || 'TV')), h('td', {}, c.kind === 'live' ? (c.item_count ? 'on air' : 'dead') : String(c.item_count)),
       h('td', { class: 'note' }, c.key.replace(/^(tv|movie):/, '')),
-      h('td', {}, h('input', { type: 'checkbox', checked: !!c.enabled, onchange: (e) => patch({ enabled: e.target.checked }) })));
+      h('td', {}, h('input', { type: 'checkbox', checked: !!c.enabled, onchange: (e) => patch({ enabled: e.target.checked }) })),
+      h('td', {}, logoCell(c)));
   });
   const q = h('input', { type: 'text', placeholder: 'Search channels…', style: 'min-width:220px' });
   const apply = () => { const t = q.value.toLowerCase(); for (const r of document.querySelectorAll('.chrow')) r.style.display = !t || r.dataset.n.includes(t) ? '' : 'none'; };
@@ -487,7 +509,7 @@ async function tabChannels(body) {
     h('div', { class: 'row2' }, q, h('button', { onclick: bulk(true) }, 'Enable shown'), h('button', { onclick: bulk(false) }, 'Disable shown')),
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/channels/rebuild', { method: 'POST', body: {} }); renderSetup(); } }, 'Re-infer channels'),
       h('span', { class: 'note' }, `${chans.filter((c) => c.item_count).length} channels. Rebuilt automatically after every scan; your renames and numbers are kept. How many get created is controlled in the Settings tab.`)),
-    chans.length ? h('table', {}, h('tr', {}, ['No.', 'Name', 'Type', 'Items', 'Source', 'On'].map((t) => h('th', {}, t))), rows) : h('p', { class: 'note' }, 'No channels yet — add a library first.'));
+    chans.length ? h('table', {}, h('tr', {}, ['No.', 'Name', 'Type', 'Items', 'Source', 'On', 'Logo'].map((t) => h('th', {}, t))), rows) : h('p', { class: 'note' }, 'No channels yet — add a library first.'));
 }
 
 const put = (body) => api('/api/settings', { method: 'PUT', body });
@@ -582,6 +604,16 @@ async function tabSettings(body) {
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/scan', { method: 'POST', body: {} }); setTimeout(renderSetup, 800); } }, 'Scan now'), h('span', { class: 'note' }, lastScan + next + (sc.running ? ' · scanning…' : ''))),
     h('h3', {}, 'Security'),
     securityBlock(au.enabled, apiKey),
+    h('h3', {}, 'Smart scheduling'),
+    boolField(s, 'autoDaypart', 'Schedule to suit the time of day', 'Uses your genres and age ratings: cartoons and family shows after school and on Saturday mornings, mature and horror late at night, factual by day. Soft preferences, so channels never run dry. Re-plans the schedule.'),
+    boolField(s, 'eraAds', 'Match adverts to the era', 'A 1990s programme gets 1990s adverts more often. WBTV reads the year from the ad title or folder name ("1994", "1990s", "80s"). Ads with no year are unaffected.'),
+    h('h3', {}, 'Presentation'),
+    boolField(s, 'channelBug', 'Channel bug on programmes', 'A small channel logo (add logos in the Channels tab) or, without one, the channel name, in the top-right corner.'),
+    boolField(s, 'identsEnabled', 'Station idents', 'A 5 second generated ident (big channel number and name) before each programme. Re-plans the schedule.'),
+    boolField(s, 'signOffEnabled', 'Closedown overnight', 'TV and movie channels show a test card and tone between these times, then start up again. The guide shows "Off air".'),
+    h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Closedown from / to'),
+      h('input', { type: 'time', value: s.signOffFrom, onchange: (e) => put({ signOffFrom: e.target.value }) }),
+      h('input', { type: 'time', value: s.signOffTo, onchange: (e) => put({ signOffTo: e.target.value }) })),
     h('h3', {}, 'Video encoding'),
     h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Hardware encoding'),
       h('select', { onchange: async (e) => { await put({ hwEncoder: e.target.value }); renderSetup(); } },

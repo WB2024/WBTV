@@ -1,11 +1,11 @@
 FROM node:24-trixie-slim
 
 # BuildKit sets TARGETARCH (amd64 or arm64) for multi-arch builds
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl fonts-dejavu-core mesa-va-drivers vainfo \
- && if [ "$TARGETARCH" = "amd64" ]; then apt-get install -y --no-install-recommends intel-media-va-driver i965-va-driver; fi \
+ && if [ "${TARGETARCH:-amd64}" = "amd64" ]; then apt-get install -y --no-install-recommends intel-media-va-driver i965-va-driver; fi \
  && if [ "$TARGETARCH" = "arm64" ]; then YT=yt-dlp_linux_aarch64; else YT=yt-dlp_linux; fi \
  && curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/$YT" -o /usr/local/bin/yt-dlp \
  && chmod +x /usr/local/bin/yt-dlp \

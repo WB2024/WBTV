@@ -1,6 +1,7 @@
 import { tx, getSettings } from './db.js';
 import { buildPromo } from './promo.js';
 import { ttsReady } from './tts.js';
+import { classify, daypartWeight, pickWeighted, guessAdYear, eraWeight, programmeYear } from './daypart.js';
 
 /**
  * The "broadcast" schedule. It is generated ahead of time and *persisted*, so the guide
@@ -15,18 +16,28 @@ const HISTORY_HOURS = 2;
 const rand = (a, b) => a + Math.random() * (b - a);
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 
-function makePicker(db, ch, items) {
+/** Weight of an item (or a show, via its first episode) for airing at time ts; neutral when dayparting is off. */
+function weigher(settings) {
+  if (!settings.autoDaypart) return () => 1;
+  return (it, ts) => {
+    it._dp ||= classify([...JSON.parse(it.genres || '[]'), ...JSON.parse(it.show_genres || '[]')], it.mpaa || it.show_mpaa);
+    return daypartWeight(it._dp, ts);
+  };
+}
+
+function makePicker(db, ch, items, settings) {
+  const wOf = weigher(settings);
   const hist = db.prepare('SELECT item_id FROM programmes WHERE channel_id=? ORDER BY start DESC LIMIT 400')
     .all(ch.id).map((r) => r.item_id).reverse();
 
   if (ch.kind === 'movie') {
     const recent = hist.slice();
-    return () => {
+    return (ts) => {
       const n = Math.min(Math.floor(items.length / 2), 100);
       const recentSet = new Set(n > 0 ? recent.slice(-n) : []);
       let pool = items.filter((i) => !recentSet.has(i.id));
       if (!pool.length) pool = items;
-      const it = pickOne(pool);
+      const it = pickWeighted(pool, (x) => wOf(x, ts));
       recent.push(it.id);
       return it;
     };
@@ -52,10 +63,10 @@ function makePicker(db, ch, items) {
     lastIdx.set(k, shows.get(k).indexOf(it));
     lastShow = k;
   }
-  return () => {
+  return (ts) => {
     const ids = [...shows.keys()];
     const pool = ids.length > 1 ? ids.filter((k) => k !== lastShow) : ids;
-    const k = pickOne(pool);
+    const k = pickWeighted(pool, (id) => wOf(shows.get(id)[0], ts));
     const eps = shows.get(k);
     const idx = lastIdx.has(k) ? (lastIdx.get(k) + 1) % eps.length : Math.floor(Math.random() * eps.length);
     lastIdx.set(k, idx);
@@ -67,7 +78,7 @@ function makePicker(db, ch, items) {
 export const REEL = 600; // ads longer than this are "reels" (recorded ad breaks): we play a random chunk of one
 
 /** Ad blocks filling `target` seconds. exact=true trims the last piece so the gap closes precisely. */
-function fillAds(ads, target, exact, state) {
+function fillAds(ads, target, exact, state, year = null) {
   const out = [];
   let filled = 0;
   const usedHere = new Set();
@@ -77,7 +88,7 @@ function fillAds(ads, target, exact, state) {
     let pool = ads.filter((a) => free(a) && (!exact || a.duration <= remaining + 0.01 || a.duration > REEL));
     if (!pool.length && exact) pool = ads.filter(free); // nothing fits: trim one
     if (!pool.length) pool = ads; // tiny ad pools: allow repeats
-    const ad = pickOne(pool);
+    const ad = year ? pickWeighted(pool, (a) => eraWeight(a.year, year)) : pickOne(pool);
     let len, inPoint = 0;
     if (ad.duration > REEL) {
       len = Math.min(exact ? remaining : Math.max(30, remaining), ad.duration);
@@ -90,25 +101,46 @@ function fillAds(ads, target, exact, state) {
   return out;
 }
 
+export const IDENT_SECONDS = 5;
+
+const toMinutes = (hhmm, fallback) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
+  return m ? Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2])) : fallback;
+};
+/** If `t` (unix seconds) falls inside the nightly closedown window, returns when it ends (unix seconds); otherwise null. */
+export function signOffEnd(settings, t) {
+  if (!settings.signOffEnabled) return null;
+  const a = toMinutes(settings.signOffFrom, 180), b = toMinutes(settings.signOffTo, 300);
+  if (a === b) return null;
+  const d = new Date(t * 1000);
+  const m = d.getHours() * 60 + d.getMinutes();
+  const inside = a < b ? m >= a && m < b : m >= a || m < b;
+  if (!inside) return null;
+  const end = new Date(d);
+  end.setHours(Math.floor(b / 60), b % 60, 0, 0);
+  if (end <= d) end.setDate(end.getDate() + 1);
+  return end.getTime() / 1000;
+}
+
 function extendChannel(db, ch, settings, ads, now, horizon) {
   let t = db.prepare('SELECT MAX(end) AS m FROM blocks WHERE channel_id=?').get(ch.id).m;
   const floorHist = now - HISTORY_HOURS * 3600;
   if (t == null || t < floorHist) t = Math.floor(floorHist / 300) * 300;
   if (t >= horizon) return;
 
-  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres, i.artist,
-      s.title AS show_title, s.plot AS show_plot
+  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres, i.artist, i.aired, i.mpaa,
+      s.title AS show_title, s.plot AS show_plot, s.year AS show_year, s.genres AS show_genres, s.mpaa AS show_mpaa
     FROM items i JOIN channel_items ci ON ci.item_id=i.id LEFT JOIN shows s ON s.id=i.show_id
     WHERE ci.channel_id=? AND i.runtime>0`).all(ch.id);
   if (!items.length) return;
   if (ch.kind === 'music' || ch.kind === 'radio') return extendRotation(db, ch, items, t, horizon);
-  const pick = makePicker(db, ch, items);
+  const pick = makePicker(db, ch, items, settings);
 
   // "coming up next" announcements need to know the next few programmes, so we plan a few items ahead
   const promoOn = settings.promosEnabled && ttsReady(settings.promoVoice);
   const chName = db.prepare('SELECT COALESCE(name_override, auto_name) AS n FROM channels WHERE id=?').get(ch.id)?.n || 'this channel';
   const lookahead = [];
-  const take = () => { while (lookahead.length < (promoOn ? Math.max(1, settings.promoCount) : 1)) lookahead.push(pick()); return lookahead.shift(); };
+  const take = () => { while (lookahead.length < (promoOn ? Math.max(1, settings.promoCount) : 1)) lookahead.push(pick(t + lookahead.length * 1800)); return lookahead.shift(); };
   const insPromo = db.prepare('INSERT INTO promos(segments, est) VALUES(?,?)');
   const insPromoBlock = db.prepare("INSERT INTO blocks(channel_id,programme_id,kind,item_id,ad_id,in_point,start,end,promo_id) VALUES(?,NULL,'promo',?,NULL,?,?,?,?)");
   let firstOnChannel = db.prepare('SELECT 1 FROM blocks WHERE channel_id=? LIMIT 1').get(ch.id) == null;
@@ -120,12 +152,19 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
 
   tx(db, () => {
     while (t < horizon) {
+      // nightly closedown: a test card until the window ends, then the first programme of the "morning"
+      const off = signOffEnd(settings, t);
+      if (off) { insBlock.run(ch.id, null, 'signoff', null, null, 0, t, off); t = off; firstOnChannel = true; continue; }
       const item = take();
       const D = item.runtime;
+      const year = settings.eraAds ? programmeYear(item) : null; // adverts from the same era as the programme
       const promoOpts = { count: settings.promoCount, readPlots: settings.promoReadPlots };
 
       // Between programmes: [adverts to the next grid line] then the "coming up next" slot, so the programme still starts on the dot
       const wantPromo = promoOn && !firstOnChannel;
+      const identLen = settings.identsEnabled && !firstOnChannel ? IDENT_SECONDS : 0;
+      let identDone = false;
+      const addIdent = () => { insBlock.run(ch.id, null, 'ident', null, null, 0, t, t + IDENT_SECONDS); t += IDENT_SECONDS; identDone = true; };
       const addPromo = (p) => {
         const pid = Number(insPromo.run(JSON.stringify(p.segments), p.est).lastInsertRowid);
         const off = item.runtime > p.dur + 40 ? rand(0.12, 0.55) * (item.runtime - p.dur - 10) : 0; // a clip from inside the next programme
@@ -136,22 +175,25 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
         if (wantPromo) {
           if (gap < 25) gap += align; // not enough room: use the next grid slot instead of losing the alignment
           const promo = buildPromo(chName, [item, ...lookahead], Math.min(gap, settings.promoMaxSeconds), promoOpts);
-          const adLen = gap - (promo ? promo.dur : 0);
+          const adLen = gap - (promo ? promo.dur : 0) - identLen;
           if (adLen >= 1.5) {
-            for (const { ad, len, inPoint } of fillAds(ads, adLen, true, adState)) {
+            for (const { ad, len, inPoint } of fillAds(ads, adLen, true, adState, year)) {
               insBlock.run(ch.id, null, 'ad', null, ad.id, inPoint, t, t + len); t += len;
             }
           }
           if (promo) addPromo(promo);
+          if (identLen) addIdent();
         } else if (gap >= 15 && gap < align) {
-          for (const { ad, len, inPoint } of fillAds(ads, gap, true, adState)) {
+          for (const { ad, len, inPoint } of fillAds(ads, gap - identLen, true, adState, year)) {
             insBlock.run(ch.id, null, 'ad', null, ad.id, inPoint, t, t + len); t += len;
           }
+          if (identLen) addIdent();
         }
       } else if (wantPromo) {
         const promo = buildPromo(chName, [item, ...lookahead], settings.promoMaxSeconds, promoOpts);
         if (promo) addPromo(promo);
       }
+      if (identLen && !identDone) addIdent();
       firstOnChannel = false;
 
       // split into segments with ad breaks between
@@ -168,7 +210,7 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
         insBlock.run(ch.id, progId, 'content', item.id, null, bounds[s], t, t + len); t += len;
         if (s < bounds.length - 2) {
           const target = settings.breakLengthMinutes * 60 * rand(0.7, 1.2);
-          for (const { ad, len: l, inPoint } of fillAds(ads, target, false, adState)) {
+          for (const { ad, len: l, inPoint } of fillAds(ads, target, false, adState, year)) {
             insBlock.run(ch.id, progId, 'ad', null, ad.id, inPoint, t, t + l); t += l;
           }
         }
@@ -220,7 +262,7 @@ function extendRotation(db, ch, items, t, horizon) {
 function planContext(db) {
   const settings = getSettings(db);
   const ads = settings.adsEnabled
-    ? db.prepare("SELECT id, duration, kind FROM ads WHERE status='ready' AND duration >= 3").all()
+    ? db.prepare("SELECT id, duration, kind, title, file FROM ads WHERE status='ready' AND duration >= 3").all().map((a) => ({ ...a, year: guessAdYear(`${a.title} ${a.file}`) }))
     : [];
   return { settings, ads };
 }

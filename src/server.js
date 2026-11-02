@@ -13,6 +13,7 @@ import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
 import { addAdUrls, processAds, removeAd } from './ads.js';
 import { initAuth } from './auth.js';
+import { logoFile, saveLogo, removeLogo, MIME } from './logos.js';
 import { hw, detectHw } from './hw.js';
 import { registerIptvOut } from './iptvout.js';
 import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
@@ -21,6 +22,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = openDb(cfg.configDir);
 const app = Fastify({ logger: { level: 'warn' } });
 const { getToken } = initAuth(app, db);
+app.addContentTypeParser(['image/png', 'image/jpeg', 'image/webp'], { parseAs: 'buffer', bodyLimit: 2 * 1024 * 1024 }, (req, body, done) => done(null, body));
 
 // ---------------------------------------------------------------- scanning
 const scan = { running: false, phase: 'idle', library: null, dirs: 0, files: 0, changed: 0, removed: 0, probe: null, started: 0, finished: 0, error: null, auto: false };
@@ -132,8 +134,21 @@ const channelRow = `id, key, kind, COALESCE(name_override, auto_name) AS name, a
 
 app.get('/api/channels', (req) => {
   const all = req.query.all === '1';
-  return db.prepare(`SELECT ${channelRow} FROM channels ${all ? '' : 'WHERE enabled=1 AND item_count>0'} ORDER BY number, id`).all();
+  return db.prepare(`SELECT ${channelRow} FROM channels ${all ? '' : 'WHERE enabled=1 AND item_count>0'} ORDER BY number, id`).all()
+    .map((c) => ({ ...c, logo: !!logoFile(c.id) }));
 });
+
+app.get('/api/channels/:id/logo', async (req, reply) => {
+  const f = logoFile(req.params.id);
+  if (!f) return reply.code(404).send();
+  return reply.header('Cache-Control', 'no-cache').type(MIME[path.extname(f).slice(1)]).send(fs.createReadStream(f));
+});
+app.put('/api/channels/:id/logo', async (req, reply) => {
+  if (!db.prepare('SELECT 1 FROM channels WHERE id=?').get(req.params.id)) return reply.code(404).send({ error: 'No such channel' });
+  if (!saveLogo(req.params.id, req.body, req.headers['content-type'])) return reply.code(400).send({ error: 'Send a PNG, JPEG or WebP image (max 2 MB)' });
+  return { ok: true };
+});
+app.delete('/api/channels/:id/logo', async (req) => { removeLogo(req.params.id); return { ok: true }; });
 
 app.patch('/api/channels/:id', async (req) => {
   const { name, number, enabled } = req.body || {};
@@ -194,6 +209,13 @@ app.get('/api/epg', (req) => {
     }
     programmes[c.id] = list;
   }
+  // closedown periods show up as "Off air" so the guide matches what is on screen
+  const off = db.prepare("SELECT b.id, b.channel_id AS ch, b.start, b.end FROM blocks b JOIN channels c ON c.id=b.channel_id WHERE b.kind='signoff' AND c.enabled=1 AND b.end > ? AND b.start < ?").all(from, to);
+  for (const b of off) {
+    (programmes[b.ch] ||= []).push({ id: -(5000000 + b.id), item: 0, start: b.start, end: b.end, movie: false, title: 'Off air', subtitle: 'Closedown', season: null, episode: null,
+      year: null, plot: 'This channel is closed down for the night.', rating: null, mpaa: '', genres: [] });
+  }
+  for (const k of Object.keys(programmes)) programmes[k].sort((x, y) => x.start - y.start);
   return { now, from, to, programmes };
 });
 
@@ -260,7 +282,7 @@ app.put('/api/settings', async (req) => {
   if ('promoMaxSeconds' in body) body.promoMaxSeconds = Math.min(120, Math.max(15, Math.round(Number(body.promoMaxSeconds) || 60)));
   const after = setSettings(db, body);
   if (before.hwEncoder !== after.hwEncoder) await detectHw(after.hwEncoder);
-  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder']; // these never need a re-plan
+  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug']; // these never need a re-plan
   if ('hwEncoder' in body && !['auto', 'none', 'vaapi', 'nvenc'].includes(body.hwEncoder)) delete body.hwEncoder;
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {

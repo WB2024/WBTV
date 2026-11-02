@@ -6,6 +6,7 @@ import { cfg } from './config.js';
 import { probe } from './media.js';
 import { REEL } from './scheduler.js';
 import { getSettings } from './db.js';
+import { logoFile } from './logos.js';
 import { prepare as prepareNarration } from './tts.js';
 import { resolveYoutube, probeLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
@@ -135,6 +136,14 @@ export class Broadcaster {
         if (until && dur < 0.05) { cursor = until + 0.01; continue; }
         const fill = until ? this.pickFiller(dur) : null;
         if (fill) { plan = fill; dur = fill.dur; }
+      }
+      if (block && (block.kind === 'signoff' || block.kind === 'ident')) {
+        // generated pieces: the closedown test card, and the short station ident before a programme
+        const signoff = block.kind === 'signoff';
+        dur = signoff ? Math.min(dur, 300) : dur; // re-check the schedule every few minutes during closedown
+        produced = signoff ? await this.runSignoff(dur) : await this.runIdent(dur, cursor - block.start);
+        ok = produced > 0.5;
+        plan = null;
       }
       if (plan && plan.file) {
         const info = await probe(plan.file);
@@ -273,7 +282,7 @@ export class Broadcaster {
       '-ss', offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', file];
     if (!hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
     args.push('-t', dur.toFixed(3), '-map', '0:v:0', '-map', hasAudio ? '0:a:0' : '1:a:0',
-      '-vf', vf + e.tail, '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
+      '-vf', this.withBug(vf, e.tail), '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
     return this.runFfmpeg(args);
   }
 
@@ -337,6 +346,64 @@ export class Broadcaster {
       args.push('-filter_complex', this.audioVisual({ hasArt: false, label: 'LIVE RADIO', title: name, sub1: group || '', sub2: '' }), '-map', '[v]', '-map', '[a]', ...e.codec);
     }
     return this.runFfmpeg(args);
+  }
+
+  chInfo() {
+    return this.db.prepare('SELECT COALESCE(name_override, auto_name) AS name, number FROM channels WHERE id=?').get(this.id) || { name: 'WBTV', number: 0 };
+  }
+
+  /** Channel logo (if one was uploaded) or the channel name, small in the corner of programmes. */
+  withBug(vf, tail) {
+    if (!getSettings(this.db).channelBug) return vf + tail;
+    const { height: H } = cfg;
+    const logo = logoFile(this.id);
+    if (logo) {
+      return `[in]${vf}[m0];movie=${logo},scale=-2:${Math.round(H * 0.075)},format=rgba,colorchannelmixer=aa=0.75[lg];[m0][lg]overlay=W-w-W*0.03:H*0.045${tail}[out]`;
+    }
+    if (!fs.existsSync(cfg.fontFile)) return vf + tail;
+    const name = this.textFile('bug', this.chInfo().name);
+    return `${vf},drawtext=fontfile=${cfg.fontFile}:textfile=${name}:expansion=none:x=w-tw-w*0.03:y=h*0.045:fontsize=${Math.round(H * 0.04)}:fontcolor=white@0.7:shadowcolor=black@0.6:shadowx=2:shadowy=2${tail}`;
+  }
+
+  /** Closedown: a test card and a steady tone, like TV used to do overnight. */
+  runSignoff(dur) {
+    const e = this.encodeArgs();
+    const { width: W, height: H } = cfg;
+    const st = getSettings(this.db);
+    let vf = 'format=yuv420p';
+    if (fs.existsSync(cfg.fontFile)) {
+      const l1 = this.textFile('so1', `${this.chInfo().name} has closed down for the night`);
+      const l2 = this.textFile('so2', `Programmes resume at ${st.signOffTo}`);
+      vf += `,drawbox=x=iw*0.12:y=ih*0.38:w=iw*0.76:h=ih*0.24:color=black@0.82:t=fill` +
+        `,drawtext=fontfile=${cfg.fontFile}:textfile=${l1}:expansion=none:x=(w-tw)/2:y=h*0.43:fontsize=${Math.round(H * 0.05)}:fontcolor=white` +
+        `,drawtext=fontfile=${cfg.fontFile}:textfile=${l2}:expansion=none:x=(w-tw)/2:y=h*0.52:fontsize=${Math.round(H * 0.04)}:fontcolor=0xffd400`;
+    }
+    return this.runFfmpeg(['-hide_banner', '-loglevel', 'error', '-nostdin',
+      '-re', '-f', 'lavfi', '-i', `pal75bars=size=${W}x${H}:rate=25`,
+      '-re', '-f', 'lavfi', '-i', 'sine=frequency=1000:sample_rate=48000,volume=0.04',
+      '-t', dur.toFixed(2), '-map', '0:v', '-map', '1:a', '-vf', vf + e.tail, ...e.codec]);
+  }
+
+  /** A few seconds of generated station ident: big channel number and name on a colour that is the same every time. */
+  runIdent(dur, elapsed = 0) {
+    const e = this.encodeArgs();
+    const { width: W, height: H } = cfg;
+    const ch = this.chInfo();
+    const colours = ['0x1a3a9c', '0x7a1f5c', '0x0d6b5f', '0x8a3b12', '0x3b2a8a', '0x1d5e8a', '0x6b1f1f', '0x2f6b1f'];
+    const colour = colours[this.id % colours.length];
+    const el = Math.max(0, elapsed);
+    let vf = 'format=yuv420p';
+    if (fs.existsSync(cfg.fontFile)) {
+      const n = this.textFile('id_n', ch.number || '');
+      const t = this.textFile('id_t', ch.name);
+      const a = `alpha='if(lt(t+${el},0.6),(t+${el})/0.6,if(gt(t+${el},4.3),(5-(t+${el}))/0.7,1))'`;
+      vf += `,drawtext=fontfile=${cfg.fontFile}:textfile=${n}:expansion=none:x=(w-tw)/2:y=h*0.28:fontsize=${Math.round(H * 0.28)}:fontcolor=white:${a}` +
+        `,drawtext=fontfile=${cfg.fontFile}:textfile=${t}:expansion=none:x=(w-tw)/2:y=h*0.68:fontsize=${Math.round(H * 0.08)}:fontcolor=0xffd400:${a}`;
+    }
+    return this.runFfmpeg(['-hide_banner', '-loglevel', 'error', '-nostdin',
+      '-re', '-f', 'lavfi', '-i', `color=c=${colour}:s=${W}x${H}:r=25`,
+      '-re', '-f', 'lavfi', '-i', 'sine=frequency=659:sample_rate=48000,volume=0.22,afade=t=out:st=0.5:d=1.2,apad',
+      '-t', dur.toFixed(2), '-map', '0:v', '-map', '1:a', '-vf', vf + e.tail, ...e.codec]);
   }
 
   runSlate(dur) {
