@@ -476,6 +476,7 @@ export class Broadcaster {
 
   runFfmpeg(inputArgs) {
     return new Promise((resolve) => {
+      if (this.stopped) return resolve(0); // stopped while deciding what to play next: never start an encoder nobody will stop
       const no = ++this.runNo;
       const run = { no, playlist: path.join(this.dir, `r${no}.m3u8`), count: 0, produced: 0, ended: false };
       this.runs.push(run);
