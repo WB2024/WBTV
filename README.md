@@ -145,7 +145,7 @@ WBTV can act as a TV tuner, so every channel (with its ads and announcements) sh
 |---|---|
 | **Plex / Jellyfin / Emby Live TV** | Add an *HDHomeRun* tuner at `http://<server>:8420`, then use the XMLTV guide below |
 | **TiviMate, VLC, Kodi, Channels, any IPTV app** | Playlist: `http://<server>:8420/iptv/playlist.m3u` |
-| **Guide data (XMLTV)** | `http://<server>:8420/iptv/epg.xml` (36 hours ahead) |
+| **Guide data (XMLTV)** | `http://<server>:8420/iptv/epg.xml` (as far ahead as the schedule is planned, about 14 hours) |
 
 The HDHomeRun emulation serves a normal MPEG-TS stream without re-encoding, so it costs almost no extra CPU on top of the shared channel stream.
 
