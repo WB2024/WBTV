@@ -37,7 +37,7 @@ class Api(rawBase: String, val key: String = "") {
 
     suspend fun channels(): List<Channel> = json.decodeFromString(get("/api/channels"))
 
-    suspend fun epg(from: Long, to: Long): EpgResponse = json.decodeFromString(get("/api/epg?from=$from&to=$to"))
+    suspend fun epg(from: Long, to: Long): EpgResponse = json.decodeFromString(get("/api/epg?from=$from&to=$to&slim=1"))
 
     suspend fun item(id: Int): ItemDetail = json.decodeFromString(get("/api/items/$id"))
 
