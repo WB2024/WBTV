@@ -177,6 +177,21 @@ export function inferChannels(db) {
     }
   }
 
+  // Different genres can share one themed name (every kind of "jazz" is "Jazz FM"). Keep each channel and its number, but tell them apart:
+  // the plainest genre (shortest name, then by key so it is stable) keeps the plain name, the others say which genre they are.
+  const genreOf = (key) => /:genre:(.+)$/.exec(key)?.[1] || '';
+  const sameName = new Map();
+  for (const [key, c] of assign.entries()) {
+    const k = `${c.kind}|${c.name.toLowerCase()}`;
+    if (!sameName.has(k)) sameName.set(k, []);
+    sameName.get(k).push([key, c]);
+  }
+  for (const group of sameName.values()) {
+    if (group.length < 2) continue;
+    group.sort(([ka], [kb]) => genreOf(ka).length - genreOf(kb).length || ka.localeCompare(kb));
+    group.slice(1).forEach(([key, c]) => { const g = genreOf(key); if (g) c.name += ` (${title(g)})`; });
+  }
+
   // a movie studio that shares its name with a TV channel gets a suffix so they stay distinguishable
   const tvNames = new Set([...assign.values()].filter((c) => c.kind === 'tv').map((c) => c.name.toLowerCase()));
   for (const c of assign.values()) if (c.kind === 'movie' && tvNames.has(c.name.toLowerCase())) c.name += ' Movies';
