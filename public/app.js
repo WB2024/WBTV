@@ -104,7 +104,7 @@ function renderGuide() {
       }, h('div', { class: 't' }, p.title), h('div', { class: 's' }, subline(p))));
     }
     inner.append(h('div', { class: 'row', 'data-ch': ci },
-      h('div', { class: `chan ${S.playing === ch.id ? 'playing' : ''}`, onclick: () => tune(ci) }, h('span', { class: 'num' }, ch.number ?? ''), h('span', { class: 'nm' }, ch.name)), cells));
+      h('div', { class: `chan ${S.playing === ch.id ? 'playing' : ''}`, title: `${ch.number ?? ''} ${ch.name}`.trim(), onclick: () => tune(ci) }, h('span', { class: 'num' }, ch.number ?? ''), h('span', { class: 'nm' }, ch.name)), cells));
   });
   inner.append(h('div', { class: 'nowline', id: 'nowline', style: `left:calc(var(--chw) + ${(now - epgFrom) / 60 * PX}px)` }));
   g.append(inner);

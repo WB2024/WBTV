@@ -6,6 +6,12 @@
   <img src="Images/Assets/6.png" alt="Live TV. Your Way." width="360">
 </p>
 
+<p align="center">
+  <a href="https://buymeacoffee.com/succinctrecords"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support%20WBTV-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" height="48"></a>
+</p>
+
+<p align="center"><b>WBTV is free and always will be. If it brings you joy, a coffee keeps the updates coming. ☕</b></p>
+
 **WBTV turns your own media library into a live TV service.** Point it at your movies and shows, and it builds
 channels from your `.nfo` tags, then "broadcasts" them on a persistent schedule. Open a channel and you join
 whatever is on *right now*, mid-programme, exactly like real television, complete with an old-school EPG guide
@@ -186,6 +192,16 @@ Images/      Artwork (Assets) and screenshots (Screenshots)
 test/        Unit tests (npm test)
 Dockerfile   Node 24 + ffmpeg + yt-dlp + Piper (speech)
 ```
+
+## ☕ Support WBTV
+
+WBTV is **free, open source and will stay that way**. It is built and tested in spare time on real hardware (a Proxmox box and a Fire TV). If you enjoy it, please consider supporting development. Every coffee goes straight into new features and keeping things working.
+
+<p align="center">
+  <a href="https://buymeacoffee.com/succinctrecords"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support%20WBTV-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" height="56"></a>
+</p>
+
+Not able to donate? A star on the repo and telling a friend helps just as much. ⭐
 
 <p align="center">
   <img src="Images/Assets/3.png" alt="WBTV" width="160">

@@ -215,7 +215,7 @@ private fun Chip(text: String, active: Boolean, focused: Boolean, t: WbtvTheme, 
 
 @Composable
 private fun Guide(vm: AppVm, t: WbtvTheme, u: Float, totalW: Dp, modifier: Modifier) {
-    val chW = (150f * u).dp
+    val chW = (196f * u).dp
     val rowH = (46f * u).dp
     val headH = (24f * u).dp
     val dpPerMin = (totalW - chW).value / AppVm.SPAN_MIN.toFloat()
@@ -277,8 +277,8 @@ private fun ChannelRow(vm: AppVm, t: WbtvTheme, u: Float, ch: Channel, index: In
         ) {
             Text("${ch.number ?: ""}", color = if (selRow) t.selTxt else if (t.flat) t.txt else t.sel, fontWeight = FontWeight.Bold, fontSize = (15 * u).sp, modifier = Modifier.width((28 * u).dp))
             Text(
-                if (t.flat) ch.name.uppercase() else ch.name, color = if (selRow) t.selTxt else t.txt, fontSize = (13 * u).sp,
-                fontWeight = if (t.flat) FontWeight.ExtraBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                if (t.flat) ch.name.uppercase() else ch.name, color = if (selRow) t.selTxt else t.txt, fontSize = (12.5f * u).sp, lineHeight = (14f * u).sp,
+                fontWeight = if (t.flat) FontWeight.ExtraBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
         Box(Modifier.weight(1f).fillMaxHeight().clip(RectangleShape)) {
