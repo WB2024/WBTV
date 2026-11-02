@@ -120,6 +120,11 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 |---|---|---|
 | Music video folder | **Music videos** | Channels by genre/decade, numbered from 400, lower-third per track |
 | Audio folder (mp3/flac/m4a...) | **Radio** | Radio stations by genre/decade, numbered from 800, cover art + waveform |
+| Interview recordings | **Radio: interviews** | One station named after the library, shuffled |
+| Podcast folders (one folder per show) | **Radio: podcasts** | One station that rotates between shows; each show's episodes play oldest first |
+| Audiobooks (`.m4b`, or a folder of chapter files per book) | **Radio: audiobooks** | One station: one book at a time, chapters in order, then the next book |
+
+Spoken-word stations read the tags in your files (title, show or book, author, date, track number, description) and fall back to folder names. Embedded cover art (the usual place for `.m4b` covers) is picked up automatically. Like a real broadcast, you join mid-episode.
 | `.m3u` / `.m3u8` playlist, single stream, or YouTube live URL | **Live TV** tab | One channel per stream, numbered from 600; dead streams hidden |
 
 Big playlists (more than 80 streams) start with the first 80 *working* channels switched on; use the **Channels** tab search box and *Enable shown* to switch on more, or *Enable all working* on the Live TV tab. The built-in suggestions point at public community lists of free streams (not run by WBTV), so availability changes and some are region-locked. YouTube live links are resolved with yt-dlp each time you tune in.

@@ -81,11 +81,35 @@ export async function syncIptvLibrary(db, lib, progress) {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 
-/** yt-dlp turns a YouTube live URL into a playable HLS URL (they expire, so resolve at tune time). */
+/**
+ * yt-dlp turns a YouTube live URL into playable HLS URLs. YouTube serves live video and audio as SEPARATE streams
+ * (there is no combined "best" format), so this returns one URL (combined) or two (video, then audio).
+ */
 export async function resolveYoutube(url) {
-  const r = await run(cfg.ytdlp, ['-g', '--no-warnings', '--no-playlist', '-f', 'best[height<=720]/best', url], { timeout: 45000 });
-  const first = r.out.split('\n').map((s) => s.trim()).find((s) => isUrl(s));
-  return r.code === 0 && first ? first : null;
+  const r = await run(cfg.ytdlp, ['-g', '--no-warnings', '--no-playlist', '--js-runtimes', 'node', '-f', 'bv*[height<=720]+ba/b[height<=720]/b', url], { timeout: 45000 });
+  const urls = r.out.split('\n').map((s) => s.trim()).filter((s) => isUrl(s)).slice(0, 2);
+  return r.code === 0 && urls.length ? urls : null;
+}
+
+const openCache = new Map(); // url -> { at, val }
+const OPEN_TTL = 20 * 60 * 1000; // resolved YouTube links last hours; a short cache makes re-tuning instant
+export const forgetLive = (url) => openCache.delete(url);
+
+/**
+ * Everything needed to play a live stream right now: the playable URL(s) and what they contain.
+ * Cached briefly so tuning in again (or the health check followed by tuning in) does not repeat the slow work.
+ */
+export async function openLive(st, timeoutMs = 20000) {
+  const hit = openCache.get(st.url);
+  if (hit && Date.now() - hit.at < OPEN_TTL) return hit.val;
+  const urls = st.src_kind === 'youtube' ? await resolveYoutube(st.url) : [st.url];
+  let val = null;
+  if (urls) {
+    const info = await probeLive(urls[0], timeoutMs);
+    if (info) val = { urls, info: urls.length > 1 ? { hasVideo: info.hasVideo, hasAudio: true } : info };
+  }
+  if (val) openCache.set(st.url, { at: Date.now(), val });
+  return val;
 }
 
 /** Is the stream actually delivering video or audio right now? */
@@ -107,9 +131,7 @@ export async function checkStreams(db, libraryId = null, onProgress) {
   await Promise.all(Array.from({ length: 6 }, async () => {
     while (i < rows.length) {
       const r = rows[i++];
-      let url = r.url;
-      if (r.src_kind === 'youtube') url = await resolveYoutube(r.url);
-      const ok = url ? await probeLive(url, 20000) : null;
+      const ok = await openLive(r, 20000);
       upd.run(ok ? 1 : 0, Date.now(), r.id);
       onProgress?.(++done, rows.length);
     }

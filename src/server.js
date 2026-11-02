@@ -74,7 +74,7 @@ app.get('/api/libraries', () => db.prepare(`
 
 app.post('/api/libraries', async (req, reply) => {
   const { path: p, type, name } = req.body || {};
-  if (!['movies', 'tv', 'music', 'radio', 'iptv', 'ads', 'ads_tv', 'ads_movies'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
+  if (!['movies', 'tv', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks', 'iptv', 'ads', 'ads_tv', 'ads_movies'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
   let real;
   let label;
   if (type === 'iptv') {
@@ -173,7 +173,7 @@ app.get('/api/epg', (req) => {
   const to = Number(req.query.to) || now + 6 * 3600;
   const rows = db.prepare(`
     SELECT p.id, p.channel_id AS ch, p.start, p.end, i.id AS item_id, i.kind, i.title, i.plot, i.season, i.episode, i.year,
-           i.genres, i.rating, i.mpaa, i.aired, s.title AS show_title
+           i.genres, i.rating, i.mpaa, i.aired, i.artist, i.album, s.title AS show_title
     FROM programmes p JOIN items i ON i.id=p.item_id JOIN channels c ON c.id=p.channel_id
     LEFT JOIN shows s ON s.id=i.show_id
     WHERE c.enabled=1 AND p.end > ? AND p.start < ? ORDER BY p.channel_id, p.start`).all(from, to);
@@ -181,7 +181,7 @@ app.get('/api/epg', (req) => {
   const kinds = new Map(db.prepare('SELECT id, kind FROM channels').all().map((c) => [c.id, c.kind]));
   // music / radio guide entries are ~30 minutes of tracks: show the first track and list the next ones
   const tracks = new Map();
-  const mrows = rows.filter((r) => ['music', 'radio'].includes(kinds.get(r.ch)));
+  const mrows = rows.filter((r) => ['music', 'radio'].includes(kinds.get(r.ch)) && r.kind !== 'talk');
   if (mrows.length) {
     const q = db.prepare("SELECT i.artist, i.title FROM blocks b JOIN items i ON i.id=b.item_id WHERE b.programme_id=? AND b.kind='content' ORDER BY b.start LIMIT 4");
     for (const r of mrows) tracks.set(r.id, q.all(r.id));
@@ -189,7 +189,8 @@ app.get('/api/epg', (req) => {
   for (const r of rows) {
     (programmes[r.ch] ||= []).push({
       id: r.id, item: r.item_id, start: r.start, end: r.end, movie: r.kind === 'movie',
-      title: r.show_title || r.title, subtitle: r.show_title ? r.title : '',
+      title: r.kind === 'talk' ? r.title : r.show_title || r.title,
+      subtitle: r.kind === 'talk' ? [r.album, r.artist && r.artist !== r.album ? r.artist : ''].filter(Boolean).join(' · ') : r.show_title ? r.title : '',
       ...(tracks.has(r.id) ? (() => {
         const t = tracks.get(r.id);
         const nm = (x) => (x.artist ? `${x.artist} – ${x.title}` : x.title);

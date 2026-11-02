@@ -357,7 +357,7 @@ function renderSetup() {
 }
 
 const LIB_TYPES = {
-  tv: 'TV Shows', movies: 'Movies', music: 'Music videos', radio: 'Radio (audio files)', iptv: 'Live TV / IPTV',
+  tv: 'TV Shows', movies: 'Movies', music: 'Music videos', radio: 'Radio (music files)', talk_interviews: 'Radio: interviews', talk_podcasts: 'Radio: podcasts', talk_audiobooks: 'Radio: audiobooks', iptv: 'Live TV / IPTV',
   ads_tv: 'Ads – TV channels only', ads_movies: 'Ads / trailers – Movie channels only', ads: 'Ads – any channel',
 };
 const isAdsLib = (l) => l.type.startsWith('ads');
@@ -392,7 +392,7 @@ function libTable(libs, reload, poll) {
 async function tabLibraries(body) {
   const status = h('div', {});
   const list = h('div', {});
-  body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'radio']),
+  body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks']),
     h('p', { class: 'note' }, 'Music videos: video files with an Artist - Title name (or a <musicvideo> NFO). Radio: audio files; tags are read from the files. Both build themed channels automatically. Live TV and news streams are on the Live TV tab.'));
   const poll = () => scanStatus(status, reload);
   async function reload() {

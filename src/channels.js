@@ -1,4 +1,5 @@
 import { tx, getSettings } from './db.js';
+import { TALK } from './scanner.js';
 
 // ---- naming -------------------------------------------------------------
 
@@ -86,18 +87,19 @@ export function inferChannels(db) {
   const minSec = st.minChannelMinutes * 60;
 
   const rows = db.prepare(`
-    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, s.studios AS s_studios, s.genres AS s_genres
-    FROM items i LEFT JOIN shows s ON s.id = i.show_id WHERE i.runtime > 0`).all();
+    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.library_id, l.name AS lib_name, l.type AS lib_type,
+      s.studios AS s_studios, s.genres AS s_genres
+    FROM items i LEFT JOIN shows s ON s.id = i.show_id LEFT JOIN libraries l ON l.id = i.library_id WHERE i.runtime > 0`).all();
 
   // A "unit" is a whole show (all its episodes stay together) or a single movie.
   const units = new Map();
   for (const r of rows) {
-    const solo = r.kind === 'movie' || r.kind === 'musicvideo' || r.kind === 'track';
+    const solo = r.kind === 'movie' || r.kind === 'musicvideo' || r.kind === 'track' || r.kind === 'talk';
     const key = solo ? `m${r.id}` : `s${r.show_id}`;
-    const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : 'tv';
+    const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : r.kind === 'talk' ? 'talk' : 'tv';
     let u = units.get(key);
     if (!u) {
-      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map() };
+      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map(), lib: r.library_id, libName: r.lib_name, libType: r.lib_type };
       units.set(key, u);
     }
     u.ids.push(r.id); u.seconds += r.runtime;
@@ -113,6 +115,7 @@ export function inferChannels(db) {
   const films = new Map();
   const bump = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
   for (const u of units.values()) {
+    if (u.kind === 'talk') continue; // spoken-word libraries get one station each, not genre/decade channels
     if (u.kind === 'tv') for (const k of u.studios.keys()) bump(secs.tv.studio, k, u.seconds);
     for (const k of u.genres.keys()) bump(secs[u.kind].genre, k, u.seconds);
     if (u.kind === 'music' || u.kind === 'radio') { if (u.year) bump(secs[u.kind].decade, Math.floor(u.year / 10) * 10, u.seconds); }
@@ -131,6 +134,11 @@ export function inferChannels(db) {
 
   for (const u of units.values()) {
     let placed = false;
+    if (u.kind === 'talk') {
+      // one station per spoken-word library (interviews, podcasts, audiobooks), named after the library
+      put(`radio:talk:${u.lib}`, 'radio', (u.libName || '').trim() || TALK[u.libType]?.channel || 'Talk Radio', u.ids);
+      continue;
+    }
     if (u.kind === 'tv') {
       for (const [k, n] of u.studios) {
         if ((secs.tv.studio.get(k) || 0) >= minSec) { put(`tv:studio:${k}`, 'tv', n.name, u.ids); placed = true; }

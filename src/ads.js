@@ -32,7 +32,7 @@ export async function processAds(db, onDone) {
       if (!ad) break;
       db.prepare("UPDATE ads SET status='downloading', error=NULL WHERE id=?").run(ad.id);
       const tmpl = path.join(dir, `${ad.id}.%(ext)s`);
-      const r = await run(cfg.ytdlp, ['--no-playlist', '--no-warnings', '-f', 'bv*[height<=720]+ba/b[height<=720]/b',
+      const r = await run(cfg.ytdlp, ['--no-playlist', '--no-warnings', '--js-runtimes', 'node', '-f', 'bv*[height<=720]+ba/b[height<=720]/b',
         '--merge-output-format', 'mp4', '--no-simulate', '--dump-single-json', '-o', tmpl, ad.source], { timeout: 10 * 60 * 1000 });
       let file = fs.readdirSync(dir).find((f) => f.startsWith(`${ad.id}.`) && !f.endsWith('.part') && !f.endsWith('.json'));
       if (r.code !== 0 || !file) {

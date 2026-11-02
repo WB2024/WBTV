@@ -8,10 +8,11 @@ import { REEL } from './scheduler.js';
 import { getSettings } from './db.js';
 import { logoFile } from './logos.js';
 import { prepare as prepareNarration } from './tts.js';
-import { resolveYoutube, probeLive, isUrl } from './iptv.js';
+import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
 const SEG_SECONDS = 4;
+const firstOf = (json) => { try { return JSON.parse(json || '[]')[0] || ''; } catch { return ''; } };
 const LEAD = 10;        // seconds of video we keep buffered ahead of the wall clock
 const WINDOW = 6;       // segments advertised in the live playlist
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -126,8 +127,8 @@ export class Broadcaster {
         if (dur < 0.05) { cursor = block.end + 0.01; continue; }
         plan = {
           file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start,
-          meta: block.item_kind === 'musicvideo' || block.item_kind === 'track'
-            ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster } : null,
+          meta: ['musicvideo', 'track', 'talk'].includes(block.item_kind)
+            ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster, label: firstOf(block.m_genres) } : null,
         };
       } else {
         // a hole in the schedule, or an ad that has since been removed: fill with a real ad, not the test card
@@ -150,7 +151,7 @@ export class Broadcaster {
         if (info && !this.stopped) {
           produced = plan.promo
             ? await this.runPromo(plan, dur, info.hasAudio, burst)
-            : plan.meta?.kind === 'track'
+            : ['track', 'talk'].includes(plan.meta?.kind)
               ? await this.runAudio(plan, dur, burst)
               : await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst, plan.meta);
           ok = produced > 0.5;
@@ -310,7 +311,7 @@ export class Broadcaster {
     const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-ss', plan.offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', plan.file,
       '-f', 'lavfi', '-i', `color=c=0x0a1030:s=${cfg.width}x${cfg.height}:r=25`];
     if (art) args.push('-loop', '1', '-framerate', '25', '-i', art);
-    const filter = this.audioVisual({ hasArt: !!art, label: 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
+    const filter = this.audioVisual({ hasArt: !!art, label: m.kind === 'talk' ? (m.label || 'ON AIR').toUpperCase() : 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
     args.push('-t', dur.toFixed(3), '-filter_complex', filter, '-map', '[v]', '-map', '[a]', ...e.codec);
     return this.runFfmpeg(args);
   }
@@ -322,24 +323,29 @@ export class Broadcaster {
     const name = this.db.prepare('SELECT COALESCE(name_override, auto_name) AS n FROM channels WHERE id=?').get(this.id)?.n || 'Live';
     if (!st) return;
     while (!this.stopped) {
-      const url = st.src_kind === 'youtube' ? await resolveYoutube(st.url) : st.url; // YouTube links expire: resolve each time
-      const info = url ? await probeLive(url, 25000) : null;
+      const open = await openLive(st, 25000); // resolves YouTube links and checks the stream; cached for a few minutes
       let produced = 0;
-      if (info && !this.stopped) produced = await this.runLive(url, info, name, st.grp);
+      if (open && !this.stopped) produced = await this.runLive(open.urls, open.info, name, st.grp);
       if (this.stopped) return;
+      if (produced < 0.5) forgetLive(st.url); // it failed: resolve afresh next time
       if (produced < 0.5) { if ((await this.runSlate(6)) < 0.5) await sleep(3000); } // source is down: test card, then retry
       else await sleep(1000);
     }
   }
 
-  runLive(url, info, name, group) {
+  /** `urls` is one URL, or [video, audio] when the source serves them separately (YouTube live). */
+  runLive(urls, info, name, group) {
+    urls = [].concat(urls);
     const e = this.encodeArgs();
     const args = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
-    if (isUrl(url)) args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000');
-    args.push('-i', url);
+    for (const u of urls) {
+      if (isUrl(u)) args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000');
+      args.push('-i', u);
+    }
+    const split = urls.length > 1;
     if (info.hasVideo) {
       if (!info.hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-shortest');
-      args.push('-map', '0:v:0', '-map', info.hasAudio ? '0:a:0' : '1:a:0', '-vf', e.vf + e.tail, '-af', 'aresample=48000:async=1,aformat=channel_layouts=stereo', ...e.codec);
+      args.push('-map', '0:v:0', '-map', split ? '1:a:0' : info.hasAudio ? '0:a:0' : '1:a:0', '-vf', e.vf + e.tail, '-af', 'aresample=48000:async=1,aformat=channel_layouts=stereo', ...e.codec);
     } else {
       // live radio station: draw a picture with the station name
       args.push('-f', 'lavfi', '-i', `color=c=0x0a1030:s=${cfg.width}x${cfg.height}:r=25`);

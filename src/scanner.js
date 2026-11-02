@@ -3,7 +3,8 @@ import path from 'node:path';
 import { parseNfo } from './nfo.js';
 import { tx } from './db.js';
 import { cfg } from './config.js';
-import { probe, probeTags } from './media.js';
+import crypto from 'node:crypto';
+import { probe, probeTags, run } from './media.js';
 import { syncIptvLibrary } from './iptv.js';
 
 const VIDEO = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.ts', '.m2ts', '.mpg', '.mpeg', '.flv', '.webm', '.divx', '.vob', '.ogm']);
@@ -42,7 +43,7 @@ function pickArt(names, base, kind) {
 export async function scanLibrary(db, lib, progress) {
   if (lib.type.startsWith('ads')) return scanAdsLibrary(db, lib, progress);
   if (lib.type === 'iptv') return syncIptvLibrary(db, lib, progress);
-  if (lib.type === 'radio') return scanRadio(db, lib, progress);
+  if (lib.type === 'radio' || TALK[lib.type]) return scanRadio(db, lib, progress);
   const io = new Pool(cfg.scanConcurrency);
   const readdir = (d) => io.run(() => fs.readdir(d, { withFileTypes: true }));
   const stat = (p) => io.run(() => fs.stat(p)).catch(() => null);
@@ -105,7 +106,7 @@ export async function scanLibrary(db, lib, progress) {
 
     if (lib.type === 'music') {
       // music video: NFO first, else "Artist - Title" from the file name
-      const m = base.match(/^(.+?)s+-s+(.+)$/);
+      const m = base.match(/^(.+?)\s+-\s+(.+)$/);
       const artist = nfo?.artist || (m ? m[1].trim() : path.basename(dir));
       const title = nfo?.title || (m ? m[2].trim() : cleanName(base));
       queue([lib.id, null, 'musicvideo', full, title, nfo?.plot || '', nfo?.year, null, null, nfo?.aired || '', nfo?.rating ?? null, nfo?.mpaa || '',
@@ -165,18 +166,47 @@ export async function scanLibrary(db, lib, progress) {
 const AUDIO = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.wma', '.m4b']);
 const COVERS = ['cover', 'folder', 'front', 'album', 'albumart'];
 
-/** Radio library: audio files, tags read with ffprobe (only for new/changed files, 8 at a time). */
+/** What a spoken-word library holds: the label shown on screen, and the genre we give its items. */
+export const TALK = {
+  talk_interviews: { label: 'Interview', channel: 'Radio Interviews' },
+  talk_podcasts: { label: 'Podcast', channel: 'Podcasts' },
+  talk_audiobooks: { label: 'Audiobook', channel: 'Audiobooks' },
+};
+
+/** Audiobooks and many music files carry their cover inside the file: pull it out once (cached by file identity). */
+async function embeddedCover(file, st) {
+  const dir = path.join(cfg.configDir, 'covers');
+  const out = path.join(dir, crypto.createHash('md5').update(`${file}|${st.size}|${st.mtimeMs}`).digest('hex') + '.jpg');
+  try { await fs.access(out); return out; } catch { /* not extracted yet */ }
+  await fs.mkdir(dir, { recursive: true });
+  const r = await run(cfg.ffmpeg, ['-nostdin', '-v', 'error', '-y', '-i', file, '-an', '-map', '0:v:0?', '-frames:v', '1', '-vf', 'scale=-2:600', out], { timeout: 30000 });
+  if (r.code !== 0) return null;
+  return fs.access(out).then(() => out, () => null);
+}
+
+const tidy = (s) => String(s || '').replace(/[._]+/g, ' ').replace(/\s+/g, ' ').trim();
+const num = (s) => { const n = parseInt(String(s || '').split('/')[0], 10); return Number.isFinite(n) ? n : null; };
+
+/**
+ * Radio libraries: audio files, tags read with ffprobe (only for new/changed files, 8 at a time).
+ * Music radio items are 'track'. Spoken-word libraries (interviews, podcasts, audiobooks) produce 'talk' items:
+ * the show or book is the album, the host or author is the artist, and the track number keeps chapters in order.
+ */
 async function scanRadio(db, lib, progress) {
+  const talk = TALK[lib.type] || null;
+  const kind = talk ? 'talk' : 'track';
   const existing = new Map(db.prepare('SELECT path,mtime,size FROM items WHERE library_id=?').all(lib.id).map((r) => [r.path, r]));
   const seen = new Set();
   const probes = new Pool(8);
-  const ins = db.prepare(`INSERT INTO items (library_id,kind,path,title,year,runtime,probed,genres,actors,poster,mtime,size,artist,album,studios,plot)
-    VALUES (?,'track',?,?,?,?,1,?,'[]',?,?,?,?,?,'[]','') ON CONFLICT(path) DO UPDATE SET title=excluded.title,year=excluded.year,runtime=excluded.runtime,
-    genres=excluded.genres,poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,artist=excluded.artist,album=excluded.album`);
+  const ins = db.prepare(`INSERT INTO items (library_id,kind,path,title,year,runtime,probed,genres,actors,poster,mtime,size,artist,album,studios,plot,season,episode,aired)
+    VALUES (?,?,?,?,?,?,1,?,'[]',?,?,?,?,?,'[]',?,?,?,?) ON CONFLICT(path) DO UPDATE SET kind=excluded.kind,title=excluded.title,year=excluded.year,runtime=excluded.runtime,
+    genres=excluded.genres,poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,artist=excluded.artist,album=excluded.album,plot=excluded.plot,
+    season=excluded.season,episode=excluded.episode,aired=excluded.aired`);
   let batch = [];
   const flush = () => { if (!batch.length) return; const b = batch; batch = []; tx(db, () => { for (const r of b) ins.run(...r); }); };
+  const skipDir = talk ? /^(@eadir|#recycle|\..*)$/i : EXTRA_DIR; // an "Interviews" folder is exactly what a talk library is made of
 
-  async function visit(dir) {
+  async function visit(dir, depth) {
     let entries;
     try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
     progress.dirs++;
@@ -193,17 +223,31 @@ async function scanRadio(db, lib, progress) {
       if (!info || !(info.duration > 0)) return;
       const t = info.tags;
       const base = path.parse(e.name).name;
-      const m = base.match(/^(?:d+[s.-]+)?(.+?)s+-s+(.+)$/);
-      const year = parseInt((t.date || t.year || '').slice(0, 4), 10);
+      const m = base.match(/^(?:\d+[\s.-]+)?(.+?)\s+-\s+(.+)$/);
+      const year = parseInt((t.date || t.year || t.creation_time || '').slice(0, 4), 10);
       progress.changed++;
-      batch.push([lib.id, full, t.title || (m ? m[2].trim() : base.replace(/^d+[s.-]+/, '')), Number.isFinite(year) ? year : null, info.duration,
-        j(t.genre ? t.genre.split(/[;/]/).map((g) => g.trim()).filter(Boolean) : []), cover ? path.join(dir, cover) : null, st.mtimeMs, st.size,
-        t.artist || t.album_artist || (m ? m[1].trim() : ''), t.album || '']);
+      const cov = cover ? path.join(dir, cover) : await probes.run(() => embeddedCover(full, st));
+      if (!talk) {
+        batch.push([lib.id, kind, full, t.title || (m ? m[2].trim() : base.replace(/^\d+[\s.-]+/, '')), Number.isFinite(year) ? year : null, info.duration,
+          j(t.genre ? t.genre.split(/[;/]/).map((g) => g.trim()).filter(Boolean) : []), cov, st.mtimeMs, st.size,
+          t.artist || t.album_artist || (m ? m[1].trim() : ''), t.album || '', '', null, null, null]);
+      } else {
+        // the folder names are the fallback for the show / book / host / author
+        const parent = tidy(path.basename(dir)), grand = tidy(path.basename(path.dirname(dir)));
+        const atRoot = path.resolve(dir) === path.resolve(lib.path);
+        const book = t.album || (atRoot ? '' : parent);
+        const who = t.artist || t.album_artist || t.author || t.composer || (lib.type === 'talk_audiobooks' && !atRoot && path.resolve(path.dirname(dir)) !== path.resolve(lib.path) ? grand : '');
+        const plain = tidy(base.replace(/^\d+[\s.-]+/, '').replace(/^\d{4}-\d{2}-\d{2}[\s.-]*/, ''));
+        const aired = (t.date || t.creation_time || '').slice(0, 10) || (/^\d{4}-\d{2}-\d{2}/.exec(base) || [''])[0];
+        const plot = String(t.description || t.comment || t.synopsis || t.lyrics || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200);
+        batch.push([lib.id, kind, full, t.title || plain || base, Number.isFinite(year) ? year : null, info.duration,
+          j([talk.label]), cov, st.mtimeMs, st.size, who, book, plot, num(t.disc), num(t.track), aired || null]);
+      }
       if (batch.length >= 300) flush();
     }));
-    await Promise.all(entries.filter((e) => e.isDirectory() && !EXTRA_DIR.test(e.name)).map((d) => visit(path.join(dir, d.name))));
+    await Promise.all(entries.filter((e) => e.isDirectory() && !skipDir.test(e.name)).map((d) => visit(path.join(dir, d.name), depth + 1)));
   }
-  await visit(lib.path);
+  await visit(lib.path, 0);
   flush();
   const gone = [...existing.keys()].filter((p) => !seen.has(p));
   if (gone.length) { const del = db.prepare('DELETE FROM items WHERE path=?'); tx(db, () => { for (const p of gone) del.run(p); }); progress.removed = (progress.removed || 0) + gone.length; }

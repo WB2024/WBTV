@@ -128,11 +128,15 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
   if (t == null || t < floorHist) t = Math.floor(floorHist / 300) * 300;
   if (t >= horizon) return;
 
-  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres, i.artist, i.aired, i.mpaa,
+  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres, i.artist, i.album, i.aired, i.mpaa, i.library_id,
       s.title AS show_title, s.plot AS show_plot, s.year AS show_year, s.genres AS show_genres, s.mpaa AS show_mpaa
     FROM items i JOIN channel_items ci ON ci.item_id=i.id LEFT JOIN shows s ON s.id=i.show_id
     WHERE ci.channel_id=? AND i.runtime>0`).all(ch.id);
   if (!items.length) return;
+  if (items[0].kind === 'talk') {
+    const lib = db.prepare('SELECT type FROM libraries WHERE id=?').get(items[0].library_id);
+    return extendTalk(db, ch, items, t, horizon, lib?.type || 'talk_interviews');
+  }
   if (ch.kind === 'music' || ch.kind === 'radio') return extendRotation(db, ch, items, t, horizon);
   const pick = makePicker(db, ch, items, settings);
 
@@ -259,6 +263,84 @@ function extendRotation(db, ch, items, t, horizon) {
   });
 }
 
+const byName = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+
+/** Order within one show or book: air date (podcasts), then disc/track number (audiobook chapters), then file name. */
+export function episodeOrder(a, b) {
+  return (a.aired && b.aired && a.aired !== b.aired ? (a.aired < b.aired ? -1 : 1) : 0)
+    || (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0) || byName(a.path, b.path);
+}
+
+/**
+ * Spoken-word stations (interviews, podcasts, audiobooks). Every guide entry is one item, with no adverts or announcements.
+ *  - interviews: shuffled, avoiding recent repeats
+ *  - podcasts:   rotate between shows; each show's episodes go out in order, oldest first, then start over
+ *  - audiobooks: one book at a time, chapters in order; when a book ends, another begins
+ * Where a show or book got to is read back from what already aired, so the story carries on after a restart.
+ */
+export function extendTalk(db, ch, items, t, horizon, mode) {
+  const groups = new Map();
+  if (mode !== 'talk_interviews') {
+    for (const it of items) {
+      const k = it.album || it.artist || '';
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(it);
+    }
+    for (const g of groups.values()) g.sort(episodeOrder);
+  }
+  const keyOf = (it) => it.album || it.artist || '';
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const hist = db.prepare('SELECT item_id FROM programmes WHERE channel_id=? ORDER BY start DESC LIMIT 400').all(ch.id).map((r) => r.item_id).reverse();
+  const lastIdx = new Map();
+  let last = null;
+  for (const id of hist) {
+    const it = byId.get(id);
+    if (!it) continue;
+    last = it;
+    if (groups.size) lastIdx.set(keyOf(it), groups.get(keyOf(it)).indexOf(it));
+  }
+  const recent = hist.slice();
+  const memory = Math.min(Math.floor(items.length / 2), 100);
+
+  const next = () => {
+    if (mode === 'talk_interviews') {
+      const avoid = new Set(memory > 0 ? recent.slice(-memory) : []);
+      let pool = items.filter((i) => !avoid.has(i.id));
+      if (!pool.length) pool = items;
+      const it = pickOne(pool);
+      recent.push(it.id);
+      return it;
+    }
+    const keys = [...groups.keys()];
+    let k;
+    if (mode === 'talk_audiobooks' && last) {
+      const g = groups.get(keyOf(last));
+      const i = g ? g.indexOf(last) : -1;
+      if (g && i >= 0 && i < g.length - 1) { last = g[i + 1]; lastIdx.set(keyOf(last), i + 1); return last; } // next chapter of the same book
+    }
+    const lastKey = last ? keyOf(last) : null;
+    const pool = keys.length > 1 ? keys.filter((x) => x !== lastKey) : keys;
+    k = pickOne(pool);
+    const g = groups.get(k);
+    // audiobooks start a new book at chapter one; podcasts continue where that show left off
+    const idx = mode === 'talk_audiobooks' ? 0 : lastIdx.has(k) ? (lastIdx.get(k) + 1) % g.length : 0;
+    lastIdx.set(k, idx);
+    last = g[idx];
+    return last;
+  };
+
+  const insProg = db.prepare('INSERT INTO programmes(channel_id,item_id,start,end) VALUES(?,?,?,?)');
+  const insBlock = db.prepare("INSERT INTO blocks(channel_id,programme_id,kind,item_id,ad_id,in_point,start,end) VALUES(?,?,'content',?,NULL,0,?,?)");
+  tx(db, () => {
+    while (t < horizon) {
+      const it = next();
+      const progId = Number(insProg.run(ch.id, it.id, t, t + it.runtime).lastInsertRowid);
+      insBlock.run(ch.id, progId, it.id, t, t + it.runtime);
+      t += it.runtime;
+    }
+  });
+}
+
 function planContext(db) {
   const settings = getSettings(db);
   const ads = settings.adsEnabled
@@ -314,7 +396,7 @@ export async function rescheduleFuture(db, now = Date.now() / 1000, channelIds =
 
 export function getBlockAt(db, channelId, t) {
   return db.prepare(`SELECT b.*, COALESCE(i.path, a.file) AS file, i.kind AS item_kind, i.title AS m_title, i.artist AS m_artist, i.album AS m_album,
-      i.poster AS m_poster, i.year AS m_year FROM blocks b
+      i.poster AS m_poster, i.year AS m_year, i.genres AS m_genres FROM blocks b
     LEFT JOIN items i ON i.id = b.item_id LEFT JOIN ads a ON a.id = b.ad_id
     WHERE b.channel_id=? AND b.start<=? AND b.end>? ORDER BY b.start DESC LIMIT 1`).get(channelId, t, t);
 }
