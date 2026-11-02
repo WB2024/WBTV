@@ -161,6 +161,8 @@ Every channel you watch is encoded live, so start-up time depends on how busy th
 - **Hardware encoding:** see below, if the server has a GPU.
 - Fewer simultaneous viewers: each channel being watched is its own encoder, and a channel stops about 25 seconds after its last viewer leaves.
 
+Open `http://<server>:8420/api/status` to see what the server is doing right now: which channels are running and how many viewers each has, the CPU load, memory, and how many voice-overs are queued. Holding the remote's channel-up button starts a new encoder for each channel you pass; recent versions only start the channel you land on, and limit how many can start at once.
+
 WBTV logs a line such as `tune-in 7.4s (slow): ... ` whenever a channel takes more than 6 seconds to start, with a breakdown of where the time went (`docker logs wbtv`). Set `WBTV_DEBUG=1` to log every start.
 
 ## Hardware encoding (optional)
