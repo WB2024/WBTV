@@ -70,6 +70,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var digitJob: Job? = null
     private var detailJob: Job? = null
     private var lastBack = 0L
+    private var startJob: Job? = null   // the pending stream start, so a burst of channel changes only starts the channel we land on
+    private var lastTuneAt = 0L
     private var retries = 0
     private var baselineOffsetMs: Long? = null     // the normal live latency, so "behind live" only counts time we've given up
 
@@ -244,7 +246,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             prefs.lastChannel = ch.id
             retries = 0
             status = null
-            startStream(ch.id)
+            // Channel surfing (holding Up/Down) changes channel several times a second, and every stream we start is an encoder on the
+            // server. If this change follows another very closely, wait a moment so only the channel we settle on is started.
+            val now = System.currentTimeMillis()
+            val rapid = now - lastTuneAt < 900
+            lastTuneAt = now
+            startJob?.cancel()
+            if (rapid) startJob = viewModelScope.launch { delay(400); if (playingId == ch.id) startStream(ch.id) }
+            else startStream(ch.id)
         }
         if (fullscreen) guideVisible = false
         osdUntil = System.currentTimeMillis() + 4500
@@ -292,7 +301,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /** Activity left the foreground: stop pulling video and free the server-side encoder. */
-    fun onBackground() { if (playingId != null) { player.stop(); player.clearMediaItems(); playingId?.let { id -> viewModelScope.launch { api.leave(id, viewer) } } } }
+    fun onBackground() { startJob?.cancel(); if (playingId != null) { player.stop(); player.clearMediaItems(); playingId?.let { id -> viewModelScope.launch { api.leave(id, viewer) } } } }
 
     /** Back in the foreground: rejoin the live stream (we're deliberately *not* paused-in-time, it's TV). */
     private var firstStart = true
