@@ -48,7 +48,7 @@ and (if you like) nostalgic ad breaks.
 - **Fast, incremental scans** that lean on NFO data (including `durationinseconds`, so ffprobe is rarely needed). Rescans run automatically on a timer.
 - **A real schedule.** Planned ahead and persisted, so the guide and the stream always agree, with history you can scroll back to. Every viewer of a channel shares one live stream.
 - **Ad breaks (optional).** Add YouTube / archive.org / direct links (downloaded once with yt-dlp) or point at local folders tagged *TV* or *Movies* (so trailers only play on movie channels). Long ad-break compilations are supported: each break plays a random chunk, like joining a recorded break in progress.
-- **"Coming up next" announcements.** After each programme a continuity slot plays: a clip from inside the next programme with a voice reading out what's on next and after that, using each programme's description (with sensible fallbacks), plus UP NEXT / AFTER THAT / LATER captions. The voice is generated locally with [Piper](https://github.com/rhasspy/piper): offline, free, no AI service. Two British voices (Alan and Jenny).
+- **"Coming up next" announcements.** After each programme a continuity slot plays: a clip from inside the next programme with a voice reading out what's on next and after that, using each programme's description (with sensible fallbacks), plus UP NEXT / AFTER THAT / LATER captions. The voice is generated locally with [Piper](https://github.com/rhasspy/piper): offline, free, no AI service. Two British voices (Alan and Jenny) come built in, and more natural-sounding ones (including high-quality British and American voices) can be installed with one click from Setup > Announcements. Numbers, years, episode codes ("S04E10"), abbreviations and punctuation are turned into speech the way a person would say them ("nineteen eighty-nine", "season four, episode ten").
 - **Filter chips** above the guide: All channels, TV, Movies, Music, Radio, Live, Networks (studio channels) and Genres (chips with nothing in them are hidden).
 - **Pause and rewind live TV.** A rolling buffer on the server (10 minutes by default) lets you pause, skip back and return to live, on the web and on Android TV.
 - **Know how long is left.** The info banner shows a progress bar and "N min left" for the current programme, what's next, and how far behind live you are if you've paused.
@@ -110,7 +110,7 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 2. **Live TV**: add an IPTV playlist, a stream or a YouTube live link (see below).
 3. **Channels**: check what was built (there is a search box), rename or renumber things, switch channels on and off.
 4. **Ads** (optional): turn on ad breaks, set how long and how often, add ad folders or links.
-5. **Announcements**: switch the "coming up next" voice-overs on or off, pick the voice (with a sample button), and choose how many programmes to mention and how long it may run.
+5. **Announcements**: switch the "coming up next" voice-overs on or off, pick the voice (with a sample button) or install more voices (the high-quality ones sound best but need roughly three times the CPU to generate), and choose how many programmes to mention and how long it may run.
 6. **Settings**: automatic rescans, the pause/rewind buffer, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
 7. **Appearance**: pick a theme, and choose whether selecting a programme jumps straight to fullscreen.
 

@@ -551,6 +551,18 @@ async function tabAds(body) {
   if (ads.some((a) => a.status === 'pending' || a.status === 'downloading')) pollTimer = setInterval(reload, 4000);
 }
 
+function moreVoices(st) {
+  const more = st.voices.filter((v) => !v.installed && (v.installable || v.installing || v.error));
+  if (!more.length) return '';
+  if (more.some((v) => v.installing)) setTimeout(() => { if (setupTab === 'announce') renderSetup(); }, 3000);
+  return h('div', { class: 'row2', style: 'align-items:flex-start' }, h('label', { style: 'width:280px' }, 'More voices'),
+    h('div', {}, more.map((v) => h('div', { style: 'margin-bottom:6px' },
+      h('button', { disabled: v.installing, onclick: async () => { await api(`/api/promo/voices/${v.id}/install`, { method: 'POST' }); renderSetup(); } },
+        v.installing ? 'Installing…' : `Install: ${v.label} (${v.mb} MB)`),
+      v.error ? h('span', { class: 'err', style: 'margin-left:8px' }, v.error) : null)),
+      h('p', { class: 'note' }, 'A one-off download from the Piper voice library, kept in your config folder. The "high quality" voices sound the most natural. Choosing a different voice re-plans the announcements.')));
+}
+
 async function tabAnnounce(body) {
   const [s, st] = await Promise.all([api('/api/settings'), api('/api/promo/status')]);
   const installed = st.voices.filter((v) => v.installed);
@@ -561,6 +573,7 @@ async function tabAnnounce(body) {
     boolField(s, 'promosEnabled', 'Announce what is coming up next', 'Between programmes: a clip from the next programme, with a voice reading out what is on next and after that.'),
     h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Announcer voice'), voiceSel,
       h('button', { onclick: () => { sampleMsg.textContent = 'Loading…'; const a = new Audio('/api/promo/sample?voice=' + voiceSel.value); a.onplaying = () => (sampleMsg.textContent = ''); a.onerror = () => (sampleMsg.textContent = 'Could not play the sample'); a.play().catch(() => {}); } }, '▶ Play sample'), sampleMsg),
+    moreVoices(st),
     numField(s, 'promoCount', 'Programmes to mention', 'Up next, after that, later… (1 to 4). Short gaps automatically mention fewer.', { min: 1 }),
     boolField(s, 'promoReadPlots', 'Read out descriptions', 'Uses the plot from each NFO; falls back to the title, genre and year when there is none.'),
     numField(s, 'promoMaxSeconds', 'Longest announcement (seconds)', 'The slot sits just before the next programme, after any ads, so programmes still start on the time grid.', { min: 15 }),

@@ -16,7 +16,7 @@ import { initAuth } from './auth.js';
 import { logoFile, saveLogo, removeLogo, MIME } from './logos.js';
 import { hw, detectHw } from './hw.js';
 import { registerIptvOut } from './iptvout.js';
-import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
+import { ttsStatus, sample, pruneCache, installVoice, VOICES } from './tts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = openDb(cfg.configDir);
@@ -315,6 +315,13 @@ app.delete('/api/ads/:id', async (req) => { removeAd(db, req.params.id); await r
 
 // ---------------------------------------------------------------- announcements (text-to-speech)
 app.get('/api/promo/status', () => ttsStatus());
+// download an extra announcer voice into /config/voices (a one-off, started by the user from Settings)
+app.post('/api/promo/voices/:id/install', async (req, reply) => {
+  const v = VOICES[req.params.id];
+  if (!v?.hf) return reply.code(404).send({ error: 'unknown voice' });
+  installVoice(req.params.id).catch((e) => console.error('voice install failed:', e.message));
+  return { started: true };
+});
 app.get('/api/promo/sample', async (req, reply) => {
   const voice = VOICES[req.query.voice] ? req.query.voice : 'alan';
   const file = await sample(voice).catch(() => null);

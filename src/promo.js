@@ -4,6 +4,8 @@
  * from whatever we know about the upcoming programmes, with generic fallbacks when metadata is missing.
  */
 
+import { speakable } from './speech.js';
+
 // Piper (our voices) speaks about 2.07 (Alan) to 2.32 (Jenny) words/second including pauses; stay conservative so the
 // slot is always long enough for the speech.
 export const WORDS_PER_SECOND = 1.95;
@@ -13,7 +15,8 @@ export const TAIL = 1.0;        // pause after the last one
 export const MIN_SECONDS = 12;
 
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
-const words = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+// counted as spoken ("1999" is three words), so the announcement slot is long enough for the real speech
+const words = (s) => { const t = speakable(s).trim(); return t ? t.split(/\s+/).length : 0; };
 
 export function cleanText(s) {
   return String(s || '')
@@ -98,16 +101,16 @@ const LATER = [
 const LABELS = ['UP NEXT', 'AFTER THAT', 'LATER', 'LATER'];
 const PLOT_CHARS = [280, 150, 0, 0];
 
-export function estimateSeconds(segments) {
+export function estimateSeconds(segments, wps = WORDS_PER_SECOND) {
   const w = segments.reduce((n, s) => n + words(s.text), 0);
-  return LEAD_IN + w / WORDS_PER_SECOND + SEG_GAP * Math.max(0, segments.length - 1) + TAIL;
+  return LEAD_IN + w / wps + SEG_GAP * Math.max(0, segments.length - 1) + TAIL;
 }
 
 /**
  * Write the announcement for [items...] (first = the very next programme) so it fits in `maxSeconds`.
  * Degrades gracefully: shorter descriptions first, then fewer programmes. Returns null if nothing fits.
  */
-export function buildPromo(channelName, items, maxSeconds, { count = 3, readPlots = true } = {}) {
+export function buildPromo(channelName, items, maxSeconds, { count = 3, readPlots = true, wps = WORDS_PER_SECOND } = {}) {
   const ch = cleanText(channelName) || 'this channel';
   const pool = items.slice(0, Math.max(1, count));
   const intro = pickOne(INTRO), then = pickOne(THEN), later = pickOne(LATER);
@@ -119,7 +122,7 @@ export function buildPromo(channelName, items, maxSeconds, { count = 3, readPlot
         const desc = describe(item, Math.round(PLOT_CHARS[Math.min(i, 3)] * scale), readPlots && scale > 0);
         return { label: LABELS[Math.min(i, 3)], title, text: desc ? `${lead} ${desc}` : lead, item: item.id };
       });
-      const est = estimateSeconds(segments);
+      const est = estimateSeconds(segments, wps);
       if (est <= maxSeconds) return { segments, est, dur: Math.max(MIN_SECONDS, Math.ceil(est)) };
     }
   }

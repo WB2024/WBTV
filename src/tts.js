@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { cfg } from './config.js';
 import { run, probe } from './media.js';
-import { LEAD_IN, SEG_GAP } from './promo.js';
+import { Readable } from 'node:stream';
+import { LEAD_IN, SEG_GAP, WORDS_PER_SECOND } from './promo.js';
+import { speakable } from './speech.js';
 
 /**
  * Local text-to-speech with Piper (offline, free). Announcements are synthesised just in time and cached,
@@ -14,19 +16,79 @@ import { LEAD_IN, SEG_GAP } from './promo.js';
 export const VOICES = {
   alan: { file: 'en_GB-alan-medium.onnx', label: 'Alan (British, male)' },
   jenny: { file: 'en_GB-jenny_dioco-medium.onnx', label: 'Jenny (British, female)' },
+  // installed on demand from Settings (a one-off download kept in /config/voices); higher quality voices are bigger and a little slower
+  cori: { file: 'en_GB-cori-high.onnx', label: 'Cori (British, female, high quality)', hf: 'en/en_GB/cori/high/en_GB-cori-high', mb: 114 },
+  northern: { file: 'en_GB-northern_english_male-medium.onnx', label: 'Northern English (male)', hf: 'en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium', mb: 63 },
+  alba: { file: 'en_GB-alba-medium.onnx', label: 'Alba (Scottish, female)', hf: 'en/en_GB/alba/medium/en_GB-alba-medium', mb: 63 },
+  ryan: { file: 'en_US-ryan-high.onnx', label: 'Ryan (American, male, high quality)', hf: 'en/en_US/ryan/high/en_US-ryan-high', mb: 121 },
+  lessac: { file: 'en_US-lessac-high.onnx', label: 'Lessac (American, female, high quality)', hf: 'en/en_US/lessac/high/en_US-lessac-high', mb: 114 },
 };
 
 const cacheDir = () => path.join(cfg.configDir, 'tts');
-const voicePath = (id) => path.join(cfg.voiceDir, (VOICES[id] || VOICES.alan).file);
+const userVoiceDir = () => path.join(cfg.configDir, 'voices');
+/** Where a voice's model lives: our own downloads first, then the ones baked into the image. */
+const voicePath = (id) => {
+  const file = (VOICES[id] || VOICES.alan).file;
+  const mine = path.join(userVoiceDir(), file);
+  return fs.existsSync(mine) ? mine : path.join(cfg.voiceDir, file);
+};
+const voiceInstalled = (id) => fs.existsSync(voicePath(id));
 
 export function ttsStatus() {
   const available = fs.existsSync(cfg.piperBin);
   return {
     available,
-    voices: Object.entries(VOICES).map(([id, v]) => ({ id, label: v.label, installed: available && fs.existsSync(voicePath(id)) })),
+    voices: Object.entries(VOICES).map(([id, v]) => ({ id, label: v.label, installed: available && voiceInstalled(id), installable: !!v.hf && !voiceInstalled(id), mb: v.mb || 0, installing: installing.has(id), error: installErrors.get(id) || '' })),
   };
 }
-export const ttsReady = (voice) => fs.existsSync(cfg.piperBin) && fs.existsSync(voicePath(voice));
+export const ttsReady = (voice) => fs.existsSync(cfg.piperBin) && voiceInstalled(voice);
+
+/** Words per second this voice really speaks at (measured when installed, with a safety margin); the announcement slot is sized from it. */
+export function voiceSpeed(id) {
+  try { const v = JSON.parse(fs.readFileSync(path.join(userVoiceDir(), (VOICES[id] || VOICES.alan).file + '.speed'), 'utf8')); if (v.wps > 0.8 && v.wps < 4) return v.wps; } catch { /* baked-in voices use the default */ }
+  return WORDS_PER_SECOND;
+}
+
+const installing = new Set();
+const installErrors = new Map();
+const HF = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/';
+async function download(url, dest) {
+  const r = await fetch(url, { redirect: 'follow' });
+  if (!r.ok || !r.body) throw new Error(`download failed (${r.status}) for ${path.basename(url)}`);
+  const tmp = dest + '.part';
+  await new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(tmp);
+    Readable.fromWeb(r.body).pipe(out).on('finish', resolve).on('error', reject);
+  });
+  fs.renameSync(tmp, dest);
+}
+
+/** Download a catalogue voice (model + config) into /config/voices, then time it so slots are sized right. */
+export async function installVoice(id) {
+  const v = VOICES[id];
+  if (!v?.hf) throw new Error('unknown voice');
+  if (voiceInstalled(id)) return;
+  if (installing.has(id)) throw new Error('already installing');
+  installing.add(id); installErrors.delete(id);
+  try {
+    fs.mkdirSync(userVoiceDir(), { recursive: true });
+    const model = path.join(userVoiceDir(), v.file);
+    await download(HF + v.hf + '.onnx.json', model + '.json');
+    await download(HF + v.hf + '.onnx', model);
+    // measure its pace on a typical announcement
+    const sample = 'Up next on this channel is a comedy series about a group of friends, who share a house, and a great many misadventures. After that, it is the evening news.';
+    const tmp = path.join(userVoiceDir(), `speed_${id}.wav`);
+    await piper(speakable(sample), id, tmp);
+    const dur = (await probe(tmp))?.duration || 0;
+    fs.rmSync(tmp, { force: true });
+    const wps = dur > 1 ? (sample.split(/\s+/).length / dur) * 0.9 : WORDS_PER_SECOND;
+    fs.writeFileSync(model + '.speed', JSON.stringify({ wps: Number(wps.toFixed(3)), measured: Date.now() }));
+  } catch (e) {
+    for (const f of [v.file, v.file + '.json', v.file + '.part', v.file + '.json.part']) fs.rmSync(path.join(userVoiceDir(), f), { force: true });
+    installErrors.set(id, e.message);
+    throw e;
+  } finally { installing.delete(id); }
+}
 
 // at most two Piper processes at once
 let active = 0;
@@ -47,7 +109,8 @@ function piper(text, voice, outFile) {
 }
 
 /** One sentence of speech -> wav file (cached by content). */
-async function synth(text, voice) {
+async function synth(raw, voice) {
+  const text = speakable(raw); // numbers, years, abbreviations and punctuation the way a person would say them
   const key = crypto.createHash('sha1').update(`${voice}|1.05|${text}`).digest('hex');
   fs.mkdirSync(cacheDir(), { recursive: true });
   const file = path.join(cacheDir(), `s_${key}.wav`);
@@ -60,7 +123,7 @@ async function synth(text, voice) {
 }
 
 const inflight = new Map();
-const narrationKey = (segments, voice) => crypto.createHash('sha1').update(`${voice}|${JSON.stringify(segments.map((s) => s.text))}`).digest('hex');
+const narrationKey = (segments, voice) => crypto.createHash('sha1').update(`${voice}|${JSON.stringify(segments.map((s) => speakable(s.text)))}`).digest('hex');
 
 /** The narration if it has already been generated (no synthesis, returns immediately); otherwise null. */
 export function cached(segments, voice) {
@@ -115,7 +178,7 @@ export function prepare(promoId, segments, voice) {
 /** For the Settings page: a short sample in the chosen voice. */
 export async function sample(voice) {
   if (!ttsReady(voice)) return null;
-  return synth("Up next on W B T V is your favourite show. After that, something you've been meaning to watch.", voice);
+  return synth("Up next on W B T V, a classic from 1984. After that, it's Doctor Who, season 3, at 9pm.", voice);
 }
 
 /** Drop cached speech nobody has asked for in a few days. */

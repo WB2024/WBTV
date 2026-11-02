@@ -1,6 +1,6 @@
 import { tx, getSettings } from './db.js';
 import { buildPromo } from './promo.js';
-import { ttsReady } from './tts.js';
+import { ttsReady, voiceSpeed } from './tts.js';
 import { classify, daypartWeight, pickWeighted, guessAdYear, eraWeight, programmeYear } from './daypart.js';
 
 /**
@@ -162,7 +162,7 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
       const item = take();
       const D = item.runtime;
       const year = settings.eraAds ? programmeYear(item) : null; // adverts from the same era as the programme
-      const promoOpts = { count: settings.promoCount, readPlots: settings.promoReadPlots };
+      const promoOpts = { count: settings.promoCount, readPlots: settings.promoReadPlots, wps: voiceSpeed(settings.promoVoice) };
 
       // Between programmes: [adverts to the next grid line] then the "coming up next" slot, so the programme still starts on the dot
       const wantPromo = promoOn && !firstOnChannel;
