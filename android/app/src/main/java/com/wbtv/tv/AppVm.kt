@@ -343,8 +343,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> if (repeat == 0 || repeat % 4 == 0) tune(wrap(idx + 1))
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> if (repeat == 0 || repeat % 4 == 0) tune(wrap(idx - 1))
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_LAST_CHANNEL -> goLastChannel()
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_BUTTON_Y -> osdUntil = if (paused) Long.MAX_VALUE else System.currentTimeMillis() + 6000
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_TV_DATA_SERVICE -> openGuide()
+            // Right and OK both take you back to the guide (Right used to, until v0.6 turned it into an info key). Info has its own key.
+            KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_BUTTON_Y -> osdUntil = if (paused) Long.MAX_VALUE else System.currentTimeMillis() + 6000
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A,
+            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_TV_DATA_SERVICE -> if (repeat == 0) openGuide() // not again while the key is held
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> openSettings()
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> togglePause()
             KeyEvent.KEYCODE_MEDIA_PLAY -> if (paused) togglePause()

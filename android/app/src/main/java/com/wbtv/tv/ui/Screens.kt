@@ -35,6 +35,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.key
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -216,6 +221,12 @@ private fun Chip(text: String, active: Boolean, focused: Boolean, t: WbtvTheme, 
 }
 
 // ------------------------------------------------------------------ guide grid
+//
+// Performance notes (a Fire TV stick is slow, and this grid is the busiest screen):
+//  - the horizontal scroll is animated, and every cell moves with it. The animated value is only read in the LAYOUT phase
+//    (Modifier.offset { ... }), so a scroll animation does not recompose hundreds of cells on every frame.
+//  - which cells exist depends on where the view is heading (the target), not on the animated value, so it only changes when you move.
+//  - "past" / "now showing" are derived per cell, so the clock ticking does not recompose the whole grid.
 
 @Composable
 private fun Guide(vm: AppVm, t: WbtvTheme, u: Float, totalW: Dp, modifier: Modifier) {
@@ -223,7 +234,7 @@ private fun Guide(vm: AppVm, t: WbtvTheme, u: Float, totalW: Dp, modifier: Modif
     val rowH = (46f * u).dp
     val headH = (24f * u).dp
     val dpPerMin = (totalW - chW).value / AppVm.SPAN_MIN.toFloat()
-    val viewRel by animateFloatAsState(((vm.viewStart - vm.epgFrom)).toFloat(), tween(220), label = "scroll")
+    val viewRel = animateFloatAsState(((vm.viewStart - vm.epgFrom)).toFloat(), tween(220), label = "scroll") // a State: read it late
     val listState = rememberLazyListState()
     val rulerTxt = if (t.rulerTxt != Color.Unspecified) t.rulerTxt else t.dim
 
@@ -241,33 +252,41 @@ private fun Guide(vm: AppVm, t: WbtvTheme, u: Float, totalW: Dp, modifier: Modif
     }
 
     Column(modifier.fillMaxWidth().background(t.bg)) {
-        // time ruler
-        Row(Modifier.fillMaxWidth().height(headH).background(t.head)) {
-            Box(Modifier.width(chW).fillMaxHeight(), Alignment.CenterStart) { Text("  CHANNEL", color = rulerTxt, fontSize = (11 * u).sp, fontWeight = FontWeight.Bold) }
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                var tick = (((vm.epgFrom + viewRel) / 1800).toLong() * 1800).toDouble()
-                while (tick < vm.epgFrom + viewRel + AppVm.SPAN_MIN * 60 + 1800) {
-                    val x = ((tick - vm.epgFrom - viewRel) / 60.0 * dpPerMin).toFloat()
-                    if (x > -40) Text("| " + hm(tick), color = rulerTxt, fontSize = (12 * u).sp, fontWeight = FontWeight.Bold, modifier = Modifier.offset(x = x.dp).padding(top = 3.dp * u))
-                    tick += 1800
-                }
-            }
-        }
+        TimeRuler(vm, u, chW, headH, dpPerMin, viewRel, t, rulerTxt)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 itemsIndexed(vm.channels, key = { _, c -> c.id }) { i, ch ->
                     ChannelRow(vm, t, u, ch, i, chW, rowH, dpPerMin, viewRel)
                 }
             }
-            // "now" marker
-            val nx = ((vm.nowSec - vm.epgFrom - viewRel) / 60.0 * dpPerMin).toFloat()
-            if (nx >= 0) Box(Modifier.offset(x = chW + nx.dp).width(2.dp).fillMaxHeight().background(t.now))
+            // "now" marker: positioned and shown/hidden in the layout/draw phase, never by recomposing
+            val nowX = { ((vm.nowSec - vm.epgFrom - viewRel.value) / 60.0 * dpPerMin).toFloat() }
+            Box(
+                Modifier.offset { IntOffset((chW + nowX().dp).roundToPx(), 0) }.width(2.dp).fillMaxHeight()
+                    .graphicsLayer { alpha = if (nowX() >= 0f) 1f else 0f }.background(t.now),
+            )
         }
     }
 }
 
 @Composable
-private fun ChannelRow(vm: AppVm, t: WbtvTheme, u: Float, ch: Channel, index: Int, chW: Dp, rowH: Dp, dpPerMin: Float, viewRel: Float) {
+private fun TimeRuler(vm: AppVm, u: Float, chW: Dp, headH: Dp, dpPerMin: Float, viewRelState: State<Float>, t: WbtvTheme, rulerTxt: Color) {
+    val viewRel = viewRelState.value // only this small row recomposes while the guide scrolls
+    Row(Modifier.fillMaxWidth().height(headH).background(t.head)) {
+        Box(Modifier.width(chW).fillMaxHeight(), Alignment.CenterStart) { Text("  CHANNEL", color = rulerTxt, fontSize = (11 * u).sp, fontWeight = FontWeight.Bold) }
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            var tick = (((vm.epgFrom + viewRel) / 1800).toLong() * 1800).toDouble()
+            while (tick < vm.epgFrom + viewRel + AppVm.SPAN_MIN * 60 + 1800) {
+                val x = ((tick - vm.epgFrom - viewRel) / 60.0 * dpPerMin).toFloat()
+                if (x > -40) Text("| " + hm(tick), color = rulerTxt, fontSize = (12 * u).sp, fontWeight = FontWeight.Bold, modifier = Modifier.offset(x = x.dp).padding(top = 3.dp * u))
+                tick += 1800
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelRow(vm: AppVm, t: WbtvTheme, u: Float, ch: Channel, index: Int, chW: Dp, rowH: Dp, dpPerMin: Float, viewRel: State<Float>) {
     val playing = vm.playingId == ch.id
     val selRow = t.flat && vm.zone == Zone.GRID && vm.sel.ch == index // flat themes highlight the whole channel box of the selected row
     val labelBg = when {
@@ -288,31 +307,37 @@ private fun ChannelRow(vm: AppVm, t: WbtvTheme, u: Float, ch: Channel, index: In
         }
         Box(Modifier.weight(1f).fillMaxHeight().clip(RectangleShape)) {
             val spanSec = AppVm.SPAN_MIN * 60
-            val winStart = vm.epgFrom + viewRel
+            val target = vm.epgFrom + (vm.viewStart - vm.epgFrom) // where the view is heading; cells are chosen from this, with a margin for the animation
+            val selProgId = if (vm.zone == Zone.GRID && vm.sel.ch == index) vm.sel.prog?.id else null
             for (p in vm.programmes[ch.id].orEmpty()) {
-                if (p.end < winStart - 600 || p.start > winStart + spanSec + 600) continue
-                Cell(vm, t, u, p, selected = vm.zone == Zone.GRID && vm.sel.ch == index && vm.sel.prog?.id == p.id, x = ((p.start - winStart) / 60.0 * dpPerMin).toFloat(), w = ((p.end - p.start) / 60.0 * dpPerMin).toFloat())
+                if (p.end < target - 5400 || p.start > target + spanSec + 5400) continue
+                val w = ((p.end - p.start) / 60.0 * dpPerMin).toFloat()
+                val xAtRest = ((p.start - target) / 60.0 * dpPerMin).toFloat()
+                key(p.id) {
+                    Cell(vm, t, u, p, selected = selProgId == p.id, w = w, clipPad = if (xAtRest < 0) (-xAtRest).coerceIn(0f, (w - 20f).coerceAtLeast(0f)) else 0f, // never negative: a very short cell used to crash the app here
+                        epgFrom = vm.epgFrom, dpPerMin = dpPerMin, viewRel = viewRel)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun Cell(vm: AppVm, t: WbtvTheme, u: Float, p: Programme, selected: Boolean, x: Float, w: Float) {
-    val past = p.end <= vm.nowSec
-    val live = p.airsAt(vm.nowSec)
+private fun Cell(vm: AppVm, t: WbtvTheme, u: Float, p: Programme, selected: Boolean, w: Float, clipPad: Float, epgFrom: Double, dpPerMin: Float, viewRel: State<Float>) {
+    val past by remember(p) { derivedStateOf { p.end <= vm.nowSec } }
+    val live by remember(p) { derivedStateOf { p.airsAt(vm.nowSec) } }
     val shape = if (t.flat) RectangleShape else RoundedCornerShape(3.dp)
     val bg = when { selected -> Brush.verticalGradient(listOf(t.sel, t.sel)); past -> Brush.verticalGradient(listOf(t.past, t.past)); else -> Brush.verticalGradient(listOf(t.cell, t.cell2)) }
     val txt = if (selected) t.selTxt else if (past) t.dim else t.txt
     val sub = if (selected) t.selTxt.copy(alpha = .75f) else t.dim
-    val clip = if (x < 0) (-x).coerceAtMost(w - 20f) else 0f // keep the title visible when the cell starts left of the window
     val gap = if (t.flat) 3f else 2f
     Box(
-        Modifier.offset(x = x.dp + (gap / 2).dp).width((w - gap).coerceAtLeast(2f).dp).fillMaxHeight().padding(vertical = 2.dp)
+        Modifier.offset { IntOffset((((p.start - epgFrom - viewRel.value) / 60.0 * dpPerMin).toFloat() + gap / 2).dp.roundToPx(), 0) }
+            .width((w - gap).coerceAtLeast(2f).dp).fillMaxHeight().padding(vertical = 2.dp)
             .clip(shape).background(bg)
             .then(if (selected) Modifier.border(2.dp, t.selLine, shape) else if (live && !t.flat) Modifier.border(2.dp, t.accent.copy(alpha = .6f), shape) else Modifier),
     ) {
-        Column(Modifier.padding(start = (6f * u + clip).dp, end = 4.dp, top = 2.dp * u)) {
+        Column(Modifier.padding(start = (6f * u + clipPad.coerceAtLeast(0f)).dp, end = 4.dp, top = 2.dp * u)) {
             Text(p.title, color = txt, fontWeight = FontWeight.Bold, fontSize = (12.5f * u).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val s = if (p.subtitle.isNotBlank()) (if (p.season != null && p.episode != null) "S${p.season}E${p.episode} · " else "") + p.subtitle else p.year?.toString().orEmpty()
             Text(s, color = sub, fontSize = (10.5f * u).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -349,7 +374,7 @@ private fun Osd(vm: AppVm, t: WbtvTheme, u: Float) {
                 }
                 if (cur != null) {
                     Text(cur.title + if (cur.subtitle.isNotBlank()) " – " + cur.subtitle else "", color = t.txt, fontSize = (16 * u).sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val frac = ((at - cur.start) / (cur.end - cur.start)).coerceIn(0.0, 1.0).toFloat()
+                    val frac = ((at - cur.start) / (cur.end - cur.start).coerceAtLeast(1.0)).coerceIn(0.0, 1.0).toFloat() // a zero-length programme must not give NaN
                     val left = kotlin.math.ceil((cur.end - at) / 60).toInt().coerceAtLeast(1)
                     Row(Modifier.padding(vertical = 6.dp * u), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp * u)) {
                         Box(Modifier.weight(1f).height((8f * u).dp).clip(RoundedCornerShape(50)).background(t.dim.copy(alpha = .35f))) {
