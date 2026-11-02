@@ -228,7 +228,8 @@ private fun Guide(vm: AppVm, t: WbtvTheme, u: Float, totalW: Dp, modifier: Modif
         val vis = listState.layoutInfo.visibleItemsInfo
         if (vis.isEmpty()) return@LaunchedEffect
         val first = vis.first().index
-        val last = vis.last { it.offset + it.size <= listState.layoutInfo.viewportEndOffset + 2 }.index
+        // lastOrNull: with no fully visible row (mid-layout, a tiny viewport) `last {}` would throw and crash the app
+        val last = vis.lastOrNull { it.offset + it.size <= listState.layoutInfo.viewportEndOffset + 2 }?.index ?: return@LaunchedEffect
         when {
             vm.sel.ch < first -> listState.animateScrollToItem(vm.sel.ch)
             vm.sel.ch > last -> listState.animateScrollToItem((vm.sel.ch - (last - first)).coerceAtLeast(0))
