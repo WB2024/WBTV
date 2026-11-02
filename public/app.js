@@ -25,15 +25,48 @@ const fmtTime = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digi
 const fmtDur = (s) => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
 
 // ------------------------------------------------------------------ state
-const S = { channels: [], epg: null, selCh: 0, selProg: null, playing: null, hls: null, detail: new Map(), digits: '' };
+const S = { allChannels: [], channels: [], epg: null, selCh: 0, selProg: null, playing: null, hls: null, detail: new Map(), digits: '', filter: localStorage.getItem('wbtv-filter') || 'all' };
 const video = $('#video');
 let epgFrom = 0;
 
+// filter chips: which channels the guide lists
+const FILTERS = [
+  ['all', 'All channels', () => true],
+  ['tv', 'TV', (c) => c.kind === 'tv'],
+  ['movie', 'Movies', (c) => c.kind === 'movie'],
+  ['network', 'Networks', (c) => (c.key || '').startsWith('tv:studio:')],
+  ['genre', 'Genres', (c) => (c.key || '').includes(':genre:')],
+];
+const filterFn = () => (FILTERS.find((f) => f[0] === S.filter) || FILTERS[0])[2];
+
+function applyFilter() {
+  S.channels = S.allChannels.filter(filterFn());
+  if (!S.channels.length && S.filter !== 'all') { S.filter = 'all'; S.channels = S.allChannels.slice(); }
+  S.selCh = Math.max(0, Math.min(S.channels.length - 1, S.selCh));
+}
+function setFilter(id) {
+  S.filter = id; localStorage.setItem('wbtv-filter', id);
+  applyFilter(); renderToolbar(); renderGuide(); selectNow(0, true);
+  $('#guide').scrollTop = 0;
+}
+function cycleFilter(dir) {
+  const i = FILTERS.findIndex((f) => f[0] === S.filter);
+  setFilter(FILTERS[(i + dir + FILTERS.length) % FILTERS.length][0]);
+}
+function renderToolbar() {
+  $('#toolbar').replaceChildren(
+    FILTERS.map(([id, label, fn]) => h('button', { class: `chip ${id === S.filter ? 'on' : ''}`, onclick: () => setFilter(id) }, label, h('small', {}, String(S.allChannels.filter(fn).length)))),
+    h('span', { class: 'hint' }, '[ ] to switch'));
+  $('#gname').textContent = (FILTERS.find((f) => f[0] === S.filter) || FILTERS[0])[1].toUpperCase();
+}
+
 async function loadGuide(keepSel = true) {
-  S.channels = await api('/api/channels');
+  S.allChannels = await api('/api/channels');
+  applyFilter();
   const now = Date.now() / 1000;
   epgFrom = Math.floor(now / 1800) * 1800 - 2 * 3600;
   S.epg = await api(`/api/epg?from=${epgFrom}&to=${epgFrom + 14 * 3600}`);
+  renderToolbar();
   renderGuide();
   if (!keepSel || !S.selProg) selectNow(S.selCh, true);
   else paintSel();
@@ -41,6 +74,9 @@ async function loadGuide(keepSel = true) {
 
 function progsFor(ch) { return S.epg?.programmes[ch.id] || []; }
 function currentOf(ch, t = Date.now() / 1000) { return progsFor(ch).find((p) => p.start <= t && p.end > t); }
+function nextOf(ch, t = Date.now() / 1000) { return progsFor(ch).find((p) => p.start > t); }
+/** A channel is always "on air": between programmes it is showing adverts / the "coming up next" slot, so it can still be tuned. */
+function tunable(ch, p, t = Date.now() / 1000) { return !!p && (p.start <= t && p.end > t || !currentOf(ch, t)); }
 
 function renderGuide() {
   const g = $('#guide');
@@ -64,7 +100,7 @@ function renderGuide() {
       const left = Math.max(0, (p.start - epgFrom) / 60 * PX), right = Math.min(total, (p.end - epgFrom) / 60 * PX);
       cells.append(h('div', {
         class: `cell ${p.end <= now ? 'past' : ''} ${p.start <= now && p.end > now ? 'now' : ''}`, 'data-p': p.id, style: `left:${left}px;width:${Math.max(4, right - left - 1)}px`,
-        onclick: () => { S.selCh = ci; S.selProg = p; paintSel(); if (p.start <= Date.now() / 1000 && p.end > Date.now() / 1000) tune(ci); },
+        onclick: () => { S.selCh = ci; S.selProg = p; paintSel(); if (tunable(ch, p)) tune(ci); },
       }, h('div', { class: 't' }, p.title), h('div', { class: 's' }, subline(p))));
     }
     inner.append(h('div', { class: 'row', 'data-ch': ci },
@@ -86,12 +122,15 @@ function subline(p) {
 function selectNow(ci, scrollTo) {
   S.selCh = Math.max(0, Math.min(S.channels.length - 1, ci));
   const ch = S.channels[S.selCh];
-  S.selProg = ch && (currentOf(ch) || progsFor(ch)[0]) || null;
+  // between programmes (adverts / announcement slot) nothing "airs now", so land on what is coming next
+  S.selProg = ch && (currentOf(ch) || nextOf(ch) || progsFor(ch).at(-1)) || null;
   paintSel(scrollTo);
 }
 
 function paintSel(scrollTo = true) {
   document.querySelectorAll('.cell.sel').forEach((e) => e.classList.remove('sel'));
+  document.querySelectorAll('.row.selrow').forEach((e) => e.classList.remove('selrow'));
+  document.querySelector(`.row[data-ch="${S.selCh}"]`)?.classList.add('selrow');
   const p = S.selProg;
   if (!p) return;
   const el = $(`.cell[data-p="${p.id}"]`);
@@ -123,7 +162,7 @@ async function showInfo(p, ch) {
 async function tune(ci) {
   const ch = S.channels[ci];
   if (!ch) return;
-  if (S.playing === ch.id && !video.paused) { goFullscreen(); return; } // already on this channel: OK means "watch it big"
+  if (S.playing === ch.id) { goFullscreen(); if (video.paused) video.play().catch(() => {}); return; } // already on this channel: OK means "watch it big" (and un-pause)
   if (autoFullscreen()) goFullscreen(); // keep this before any await: needs the user's key press / click
   leave();
   S.playing = ch.id;
@@ -141,7 +180,7 @@ async function tune(ci) {
       else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
     });
   } else { video.src = url; video.play().catch(() => {}); }
-  flashOsd(ci);
+  showOsd();
 }
 function leave() {
   if (S.playing != null) fetch(`/live/${S.playing}/stop?v=${viewer}`, { method: 'POST', keepalive: true }).catch(() => {});
@@ -149,20 +188,61 @@ function leave() {
 }
 addEventListener('pagehide', leave);
 
-let osdTimer;
-function flashOsd(ci, digits) {
-  const ch = S.channels[ci];
+// ---- on-screen banner: channel, what's on with a progress bar + minutes left, what's next, and pause/rewind state
+let osdTimer, osdTick, osdDigits = '';
+const playingChannel = () => S.allChannels.find((c) => c.id === S.playing);
+/** How far behind the live edge we are (seconds), e.g. after pausing or rewinding. */
+function behindSec() {
+  if (!S.hls || !S.hls.liveSyncPosition) return 0;
+  return Math.max(0, S.hls.liveSyncPosition - video.currentTime);
+}
+const fmtClock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+function renderOsd() {
   const osd = $('#osd');
-  if (digits) osd.replaceChildren(h('span', { class: 'n' }, digits));
-  else {
-    const now = currentOf(ch), nxt = progsFor(ch).find((p) => p.start >= (now?.end ?? 0));
-    osd.replaceChildren(h('div', {}, h('span', { class: 'n' }, ch.number ?? ''), h('span', { class: 'nm' }, ch.name)),
-      now ? h('div', { class: 'l' }, `Now: ${now.title}${now.subtitle ? ' – ' + now.subtitle : ''}  (until ${fmtTime(now.end)})`) : null,
-      nxt ? h('div', { class: 'l' }, `Next: ${nxt.title}  (${fmtTime(nxt.start)})`) : null);
-  }
-  osd.classList.add('show');
-  clearTimeout(osdTimer);
-  osdTimer = setTimeout(() => osd.classList.remove('show'), 4500);
+  if (osdDigits) { osd.replaceChildren(h('span', { class: 'n' }, osdDigits + '_')); return; }
+  const ch = playingChannel();
+  if (!ch) return;
+  const behindRaw = behindSec(), behind = behindRaw > 20 ? behindRaw : 0; // a few seconds of live latency is normal
+  const t = Date.now() / 1000 - behind;                                    // the broadcast time we are actually watching
+  const cur = currentOf(ch, t), nxt = nextOf(ch, t);
+  const state = video.paused ? '⏸ Paused' : behind ? `⏪ ${fmtClock(behind)} behind live` : '';
+  const pct = cur ? Math.min(100, Math.max(0, ((t - cur.start) / (cur.end - cur.start)) * 100)) : 0;
+  const left = cur ? Math.max(1, Math.ceil((cur.end - t) / 60)) : 0;
+  osd.replaceChildren(
+    h('div', {}, h('span', { class: 'n' }, ch.number ?? ''), h('span', { class: 'nm' }, ch.name), state ? h('span', { class: 'st' }, state) : null),
+    cur ? h('div', { class: 'l now' }, `${cur.title}${cur.subtitle ? ' – ' + cur.subtitle : ''}`) : h('div', { class: 'l now' }, 'Adverts and announcements'),
+    cur ? h('div', { class: 'prog' }, h('div', { class: 'bar' }, h('i', { style: `width:${pct}%` })), h('span', {}, `${left} min left · until ${fmtTime(cur.end)}`)) : null,
+    nxt ? h('div', { class: 'l' }, `Next: ${nxt.title}  (${fmtTime(nxt.start)})`) : null,
+    behind ? h('div', { class: 'l' }, 'Press L (or End) to jump back to live') : null);
+}
+function showOsd(ms = 4500) {
+  renderOsd();
+  $('#osd').classList.add('show');
+  clearTimeout(osdTimer); clearInterval(osdTick);
+  osdTick = setInterval(renderOsd, 1000);
+  if (!video.paused || osdDigits) osdTimer = setTimeout(hideOsd, ms); // stays up while paused
+}
+function hideOsd() { clearInterval(osdTick); $('#osd').classList.remove('show'); }
+video.addEventListener('pause', () => { if (S.playing != null && video.readyState > 0) showOsd(); });
+video.addEventListener('play', () => { if (S.playing != null) showOsd(3000); });
+
+// ---- pause / rewind live TV (the server keeps a rolling buffer; see "Pause buffer" in Settings)
+function togglePause() {
+  if (S.playing == null) return;
+  if (video.paused) video.play().catch(() => {}); else video.pause();
+}
+function seekBy(sec) {
+  if (S.playing == null || !video.seekable.length) return;
+  const lo = video.seekable.start(0), hi = video.seekable.end(video.seekable.length - 1);
+  video.currentTime = Math.min(hi - 1, Math.max(lo, video.currentTime + sec));
+  showOsd();
+}
+function goLive() {
+  if (!S.hls) return;
+  video.currentTime = S.hls.liveSyncPosition || video.currentTime;
+  video.play().catch(() => {});
+  showOsd();
 }
 const autoFullscreen = () => localStorage.getItem('wbtv-autofs') !== '0';
 const goFullscreen = () => { if (!document.fullscreenElement) $('#player').requestFullscreen?.().catch(() => {}); };
@@ -196,7 +276,8 @@ function stepChannel(dir) {
   paintSel();
 }
 function channelUpDown(dir) {
-  const idx = S.channels.findIndex((c) => c.id === S.playing);
+  let idx = S.channels.findIndex((c) => c.id === S.playing);
+  if (idx < 0) idx = S.selCh - dir; // playing channel is filtered out of the list: start from the selection
   const ci = (idx + dir + S.channels.length) % S.channels.length;
   S.selCh = ci; selectNow(ci, true); tune(ci);
 }
@@ -207,26 +288,31 @@ addEventListener('keydown', (e) => {
   if (!S.channels.length) return;
   const fs = !!document.fullscreenElement;
   switch (e.key) {
-    case 'ArrowLeft': stepProg(-1); break;
-    case 'ArrowRight': stepProg(1); break;
+    case 'ArrowLeft': fs ? seekBy(-10) : stepProg(-1); break;
+    case 'ArrowRight': fs ? seekBy(10) : stepProg(1); break;
     case 'ArrowUp': fs ? channelUpDown(-1) : stepChannel(-1); break;
     case 'ArrowDown': fs ? channelUpDown(1) : stepChannel(1); break;
     case 'PageUp': channelUpDown(-1); break;
     case 'PageDown': channelUpDown(1); break;
-    case 'Enter': { const p = S.selProg, now = Date.now() / 1000; if (p && p.start <= now && p.end > now) tune(S.selCh); break; }
+    case 'Enter': { const ch = S.channels[S.selCh]; if (tunable(ch, S.selProg)) tune(S.selCh); break; }
+    case ' ': case 'k': case 'K': togglePause(); break;
+    case 'l': case 'L': case 'End': goLive(); break;
+    case '[': cycleFilter(-1); break;
+    case ']': cycleFilter(1); break;
     case 'f': case 'F': toggleFullscreen(); break;
     case 'g': case 'G': exitFullscreen(); break;
     case 'm': case 'M': video.muted = !video.muted; break;
-    case 'i': case 'I': if (S.playing != null) flashOsd(S.channels.findIndex((c) => c.id === S.playing)); break;
+    case 'i': case 'I': if (S.playing != null) showOsd(); break;
     default:
       if (/^\d$/.test(e.key)) {
         S.digits = (S.digits + e.key).slice(-3);
-        flashOsd(0, S.digits + '_');
+        osdDigits = S.digits;
+        showOsd(2500);
         clearTimeout(digitTimer);
         digitTimer = setTimeout(() => {
           const ci = S.channels.findIndex((c) => c.number === Number(S.digits));
-          S.digits = '';
-          if (ci >= 0) { selectNow(ci, true); tune(ci); } else $('#osd').classList.remove('show');
+          S.digits = ''; osdDigits = '';
+          if (ci >= 0) { selectNow(ci, true); tune(ci); } else hideOsd();
         }, 1400);
       } else return;
   }
@@ -236,6 +322,7 @@ addEventListener('keydown', (e) => {
 // clock + periodic refresh
 setInterval(() => {
   $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  $('#gdate').textContent = new Date().toLocaleString([], { hour: 'numeric', minute: '2-digit', weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '');
   const nl = $('#nowline');
   if (nl && S.epg) nl.style.left = `calc(var(--chw) + ${(Date.now() / 1000 - epgFrom) / 60 * PX}px)`;
 }, 1000);
@@ -418,6 +505,7 @@ async function tabSettings(body) {
     boolField(s, 'autoScan', 'Rescan libraries automatically', 'Picks up new, changed and removed media. Scans are incremental, so they are quick.'),
     numField(s, 'scanIntervalMinutes', 'Rescan every (minutes)', 'Network shares give no change notifications, so WBTV checks on this interval.', { min: 5 }),
     boolField(s, 'scanOnStartup', 'Scan when WBTV starts', ''),
+    numField(s, 'pauseBufferMinutes', 'Pause / rewind buffer (minutes)', 'How far back you can pause or rewind live TV (0 = off, max 30). Kept in RAM on the server (about 20 MB per minute per watched channel).', { min: 0 }),
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/scan', { method: 'POST', body: {} }); setTimeout(renderSetup, 800); } }, 'Scan now'), h('span', { class: 'note' }, lastScan + next + (sc.running ? ' · scanning…' : ''))),
     h('h3', {}, 'Channel building'),
     numField(s, 'minChannelMinutes', 'Minimum channel size (minutes)', 'A studio/genre needs this much content to get its own channel. Lower = more channels. 0 = every studio.'),
@@ -436,6 +524,8 @@ const THEMES = [
   ['aero', 'Aero', ['#0b3a5e', '#63b9ec', '#fff0a0', '#d4eefc']],
   ['teletext', 'Teletext', ['#000000', '#0000c8', '#ffff00', '#00ffff']],
   ['synthwave', 'Synthwave', ['#0b021d', '#3a1a7a', '#ff2a6d', '#05d9e8']],
+  ['satellite', 'Satellite (classic)', ['#c8dcf4', '#1d3fae', '#ffd90f', '#1c2672']],
+  ['satellite-hd', 'Satellite HD', ['#0a2a6e', '#2f6fc4', '#ffd90f', '#ffffff']],
 ];
 function tabAppearance(body) {
   const cur = document.documentElement.dataset.theme;

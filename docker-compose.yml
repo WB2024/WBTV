@@ -17,4 +17,4 @@ services:
       - /opt/wbtv:/config                  # database + downloaded ads
       - /mnt/Main20TB:/mnt/Main20TB:ro    # media root (same path as on the host)
     tmpfs:
-      - /tmp/wbtv:size=1g                  # live HLS segments (RAM, auto-cleaned)
+      - /tmp/wbtv:size=2g                  # live HLS segments incl. the pause/rewind buffer (RAM)

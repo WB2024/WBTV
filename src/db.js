@@ -94,6 +94,7 @@ export const tx = (db, fn) => {
 };
 
 const DEFAULTS = {
+  pauseBufferMinutes: 10,  // how far back you can rewind / how long you can pause live TV (0 = off)
   autoScan: true,          // rescan libraries periodically
   scanIntervalMinutes: 60,
   scanOnStartup: true,

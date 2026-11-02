@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- title strip: only the Satellite themes show it -->
+  <div class="gbar" id="gbar"><img src="/img/logo.png" alt="WBTV"><span class="gdate" id="gdate"></span><b class="gname" id="gname"></b></div>
   <header class="top">
     <div class="player" id="player">
       <video id="video" playsinline></video>
@@ -19,10 +21,11 @@
     <div class="info" id="info"></div>
     <div class="clock" id="clock"></div>
   </header>
+  <nav class="toolbar" id="toolbar"></nav>
   <main class="guide" id="guide"><div class="loading"><img src="/img/splash.png" alt="Loading your TV guide"></div></main>
   <footer class="keys">
     <img class="brand" src="/img/logo.png" alt="WBTV"><span><b>↑↓←→</b> browse</span><span><b>Enter</b> watch</span><span><b>0-9</b> channel</span>
-    <span><b>PgUp/PgDn</b> ch ±</span><span><b>F</b> fullscreen</span><span><b>G / Esc</b> guide</span><span><b>M</b> mute</span>
+    <span><b>Space</b> pause</span><span><b>←/→</b> rewind / skip (fullscreen)</span><span><b>L</b> live</span><span><b>[ ]</b> filter</span><span><b>F</b> fullscreen</span><span><b>G / Esc</b> guide</span>
     <button id="settingsBtn">⚙ Setup</button>
   </footer>
   <div id="modal" class="modal hidden"></div>

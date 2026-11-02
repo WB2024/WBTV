@@ -28,6 +28,9 @@ export class Broadcaster {
     this.streamTime = 0; this.stopped = false;
     this.viewers = new Map();
     this.startedAt = Date.now();
+    // the live playlist advertises this many segments; the more, the further back viewers can pause/rewind
+    const mins = Number(getSettings(db).pauseBufferMinutes) || 0;
+    this.windowSegs = Math.max(WINDOW, Math.round((mins * 60) / SEG_SECONDS));
   }
 
   start() {
@@ -79,7 +82,7 @@ export class Broadcaster {
     this.runs = this.runs.filter((r) => !(r.ended && r.synced));
     for (const r of this.runs) if (r.ended) r.synced = true;
     // drop old segments (and their files)
-    while (this.segs.length > WINDOW + 12) {
+    while (this.segs.length > this.windowSegs + 6) {
       const old = this.segs.shift();
       fs.rm(path.join(this.dir, old.file), () => {});
     }
@@ -89,7 +92,7 @@ export class Broadcaster {
 
   playlist() {
     this.sync();
-    const w = this.segs.slice(-WINDOW);
+    const w = this.segs.slice(-this.windowSegs);
     if (!w.length) return null;
     const lines = ['#EXTM3U', '#EXT-X-VERSION:3',
       `#EXT-X-TARGETDURATION:${Math.ceil(Math.max(SEG_SECONDS, ...w.map((s) => s.dur)))}`,

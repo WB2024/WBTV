@@ -187,6 +187,7 @@ app.put('/api/settings', async (req) => {
   const before = getSettings(db);
   const body = { ...(req.body || {}) };
   if ('promoVoice' in body && !VOICES[body.promoVoice]) delete body.promoVoice;
+  if ('pauseBufferMinutes' in body) body.pauseBufferMinutes = Math.min(30, Math.max(0, Math.round(Number(body.pauseBufferMinutes) || 0)));
   if ('promoCount' in body) body.promoCount = Math.min(4, Math.max(1, Math.round(Number(body.promoCount) || 3)));
   if ('promoMaxSeconds' in body) body.promoMaxSeconds = Math.min(120, Math.max(15, Math.round(Number(body.promoMaxSeconds) || 60)));
   const after = setSettings(db, body);

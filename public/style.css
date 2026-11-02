@@ -162,3 +162,70 @@ textarea { width: 100%; min-height: 80px; }
 /* a little CRT scanline texture for the retro themes */
 [data-theme="vintage"] .player::after, [data-theme="teletext"] .player::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
   background: repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 3px); }
+
+/* ---------- filter chips ---------- */
+.toolbar { flex: 0 0 auto; display: flex; gap: 8px; align-items: center; padding: 6px 16px; background: var(--footer); border-top: 2px solid var(--frame); }
+.chip { padding: 3px 14px; border-radius: 16px; background: transparent; border: 1px solid var(--tick); color: var(--dim); }
+.chip:hover { background: var(--btn-h); color: var(--txt); }
+.chip.on { background: var(--sel); color: var(--sel-txt); border-color: var(--sel); font-weight: 700; }
+.chip small { margin-left: 7px; opacity: .7; font-size: .8em; }
+.toolbar .hint { margin-left: auto; color: var(--dim); font-size: .8em; }
+.guide { border-top: 0; }
+
+/* ---------- info banner: progress + minutes left, pause / rewind state ---------- */
+.osd > div:first-child { display: flex; align-items: baseline; }
+.osd .st { margin-left: auto; color: var(--sel); font-weight: 700; }
+.osd .l.now { color: var(--txt); font-weight: 700; margin-top: 4px; font-size: 1.05em; }
+.osd .prog { display: flex; align-items: center; gap: 12px; margin: 7px 0 3px; }
+.osd .prog .bar { flex: 1; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, .2); overflow: hidden; }
+.osd .prog .bar i { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
+.osd .prog span { color: var(--txt); font-size: .9em; white-space: nowrap; }
+.osd { pointer-events: none; }
+
+/* ---------- Satellite themes: the classic UK satellite-guide look (flat boxes, yellow highlight, title strip) ---------- */
+.gbar { display: none; }
+[data-theme="satellite"] {
+  --bg: #c4d8f2; --top: linear-gradient(#202a85, #141c66); --frame: #ffffff;
+  --cell: #1c3db3; --cell2: #1c3db3; --past: #14267a; --sel: #ffd90f; --sel-txt: #000000; --sel-line: #ffffff;
+  --txt: #ffffff; --dim: #c9d7fb; --line: #c4d8f2; --accent: #ffd90f; --head: #d9e6f9; --tick: #8fa8d8;
+  --chan1: #1c3db3; --chan2: #1c3db3; --play1: #12a150; --play2: #12a150; --now: #e8262a;
+  --panel: #141c66; --panel-line: #4d63c4; --input: #0c1450; --btn: #1c3db3; --btn-h: #2a52d6; --footer: #141c66;
+  --font: Arial, Helvetica, sans-serif; --radius: 0; --cell-border: 3px;
+}
+[data-theme="satellite-hd"] {
+  --bg: #0c2c70; --top: linear-gradient(#143f96, #0c2c70); --frame: #cfe2ff;
+  --cell: #3d84d8; --cell2: #2a63b6; --past: #17428c; --sel: #ffd84a; --sel-txt: #101a40; --sel-line: #ffffff;
+  --txt: #ffffff; --dim: #b8d0f5; --line: #0c2c70; --accent: #ffd84a; --head: #0a2158; --tick: #3a64b8;
+  --chan1: #1f5fbd; --chan2: #1a4fa0; --play1: #2aa05a; --play2: #1d7a43; --now: #ff5a4d;
+  --panel: #0f326f; --panel-line: #3a64b8; --input: #081c4a; --btn: #2a63b6; --btn-h: #3d84d8; --footer: #081c4a;
+  --font: "Segoe UI", Arial, sans-serif; --radius: 4px; --cell-border: 2px;
+}
+[data-theme^="satellite"] .gbar { display: flex; align-items: center; gap: 22px; padding: 6px 18px; background: #141c66; color: #fff; flex: 0 0 auto; }
+[data-theme^="satellite"] .gbar img { height: 30px; }
+[data-theme^="satellite"] .gbar .gdate { font-size: 1.05em; }
+[data-theme^="satellite"] .gbar .gname { font-size: 1.5em; letter-spacing: .04em; }
+[data-theme^="satellite"] .top { flex-direction: row-reverse; }              /* preview on the right, programme details on the left */
+[data-theme^="satellite"] .clock { right: auto; left: 18px; top: 10px; display: none; }
+[data-theme^="satellite"] .info { padding-left: 0; }
+[data-theme^="satellite"] .chan .nm, [data-theme^="satellite"] .corner { text-transform: uppercase; font-weight: 800; }
+[data-theme^="satellite"] .chan .num { color: #fff; }
+[data-theme^="satellite"] .chan { border-bottom: 3px solid var(--line); border-right: 3px solid var(--line); }
+[data-theme^="satellite"] .row.selrow .chan { background: var(--sel); color: var(--sel-txt); }
+[data-theme^="satellite"] .row.selrow .chan .num { color: var(--sel-txt); }
+[data-theme^="satellite"] .chan.playing { box-shadow: inset 6px 0 0 #12a150; }
+[data-theme="satellite"] .cell { font-weight: 800; }
+[data-theme="satellite"] .cell .s { color: #bcd0ff; font-weight: 600; }
+[data-theme="satellite"] .cell.past { color: #8fa4e0; }
+[data-theme="satellite"] .thead .tick { color: #1b2478; font-weight: 800; border-left-color: #8fa4e0; }
+[data-theme="satellite"] .cell.sel .s { color: #222; }
+[data-theme="satellite"] .cell.now { border-top: 0; }
+[data-theme="satellite-hd"] .cell.now .t { color: var(--sel); }
+[data-theme^="satellite"] .toolbar { background: #141c66; border-top: 0; }
+[data-theme^="satellite"] .chip { border-color: #4d63c4; color: #cfdcff; border-radius: 0; font-weight: 700; }
+[data-theme^="satellite"] .chip.on { background: var(--sel); color: #000; border-color: var(--sel); }
+[data-theme^="satellite"] .info img { border-color: #fff; }
+/* satellite (classic): the time ruler sits on a light strip, so its text is dark; everything else is on dark blue */
+[data-theme="satellite"] .thead .tick, [data-theme="satellite"] .corner { color: #1b2478; }
+[data-theme="satellite"] .cell .s { color: #c9d7fb; }
+[data-theme="satellite"] .cell.sel .s { color: #222; }
+[data-theme="satellite-hd"] .cell.now.sel .t { color: var(--sel-txt); }
