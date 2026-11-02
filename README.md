@@ -37,8 +37,12 @@ and (if you like) nostalgic ad breaks.
 - **A real schedule.** Planned ahead and persisted, so the guide and the stream always agree, with history you can scroll back to. Every viewer of a channel shares one live stream.
 - **Ad breaks (optional).** Add YouTube / archive.org / direct links (downloaded once with yt-dlp) or point at local folders tagged *TV* or *Movies* (so trailers only play on movie channels). Long ad-break compilations are supported: each break plays a random chunk, like joining a recorded break in progress.
 - **"Coming up next" announcements.** After each programme a continuity slot plays: a clip from inside the next programme with a voice reading out what's on next and after that, using each programme's description (with sensible fallbacks), plus UP NEXT / AFTER THAT / LATER captions. The voice is generated locally with [Piper](https://github.com/rhasspy/piper): offline, free, no AI service. Two British voices (Alan and Jenny).
-- **Seven themes**: Classic, Vintage, 90s, Modern, Aero, Teletext and Synthwave, on the web and on Android TV.
-- **Android TV app** with a proper remote-control experience (see below).
+- **Filter chips** above the guide: All channels, TV, Movies, Networks (studio channels) and Genres.
+- **Pause and rewind live TV.** A rolling buffer on the server (10 minutes by default) lets you pause, skip back and return to live, on the web and on Android TV.
+- **Know how long is left.** The info banner shows a progress bar and "N min left" for the current programme, what's next, and how far behind live you are if you've paused.
+- **Always tunable.** Between programmes (ad breaks and announcements) a channel is still on air and you can still tune to it.
+- **Nine themes**: Classic, Vintage, 90s, Modern, Aero, Teletext, Synthwave and two **Satellite** looks (classic and HD) inspired by the early-2000s UK satellite guide, with the live preview kept. On the web and on Android TV.
+- **Android TV app** with a proper remote-control experience, a full settings screen, and server controls (ads, announcements, rescans) right from the sofa (see below).
 
 ## Quick start
 
@@ -57,7 +61,7 @@ services:
       - /opt/wbtv:/config                  # database + downloaded ads
       - /mnt/Main20TB:/mnt/Main20TB:ro     # your media, read-only
     tmpfs:
-      - /tmp/wbtv:size=1g                  # live stream segments
+      - /tmp/wbtv:size=2g                  # live stream segments (incl. the pause/rewind buffer)
 ```
 
 ```bash
@@ -94,8 +98,16 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 2. **Channels**: check what was built, rename or renumber things, switch channels off.
 3. **Ads** (optional): turn on ad breaks, set how long and how often, add ad folders or links.
 4. **Announcements**: switch the "coming up next" voice-overs on or off, pick the voice (with a sample button), and choose how many programmes to mention and how long it may run.
-5. **Settings**: automatic rescans, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
+5. **Settings**: automatic rescans, the pause/rewind buffer, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
 6. **Appearance**: pick a theme, and choose whether selecting a programme jumps straight to fullscreen.
+
+Use the **filter chips** above the guide (or `[` and `]`) to show only TV channels, movie channels, networks or genres:
+
+<p align="center">
+  <img src="Images/Screenshots/web-guide-filters.jpg" alt="Filter chips: Movies" width="80%">
+</p>
+
+**Web keys:** arrows to browse, Enter to watch, 0-9 for a channel number, Space to pause, Left/Right to rewind or skip in fullscreen, L to go back to live, F for fullscreen, G or Esc for the guide.
 
 ## Themes
 
@@ -110,6 +122,10 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 <p align="center">
   <img src="Images/Screenshots/web-guide-teletext.jpg" alt="Teletext" width="48%">
   <img src="Images/Screenshots/web-guide-synthwave.jpg" alt="Synthwave" width="48%">
+</p>
+<p align="center">
+  <img src="Images/Screenshots/web-guide-satellite.jpg" alt="Satellite (classic)" width="48%">
+  <img src="Images/Screenshots/web-guide-satellite-hd.jpg" alt="Satellite HD" width="48%">
 </p>
 
 ## Android TV app
@@ -127,18 +143,26 @@ TV on, and is built for the remote.
 </p>
 <p align="center">
   <img src="Images/Screenshots/tv-guide-classic.png" alt="Guide, Classic theme" width="48%">
-  <img src="Images/Screenshots/tv-guide-synthwave.png" alt="Guide, Synthwave theme" width="48%">
+  <img src="Images/Screenshots/tv-settings.png" alt="Settings" width="48%">
+</p>
+<p align="center">
+  <img src="Images/Screenshots/tv-guide-satellite.png" alt="Guide, Satellite (classic) theme" width="48%">
+  <img src="Images/Screenshots/tv-guide-satellite-hd.png" alt="Guide, Satellite HD theme" width="48%">
 </p>
 
 | Key | Watching | In the guide |
 |---|---|---|
-| Up / Down, CH+ / CH- | next / previous channel | move between channels |
+| Up / Down, CH+ / CH- | next / previous channel | move between channels; Up from the top row goes to the filter chips and **Settings** |
 | Left | last channel | previous programme |
-| Right | open guide | next programme |
-| OK / Guide | open guide | tune a live programme (fullscreen if the setting is on) |
+| Right | info banner (progress, minutes left) | next programme |
+| OK / Guide | open guide | tune it (a live programme, or any programme if the channel is between programmes); fullscreen if the setting is on |
+| Play / Pause | pause or resume live TV | same |
+| Rewind / Fast-forward | back 30 s / forward 30 s (past the live edge = back to live) | |
 | 0-9 | jump to channel number | same |
-| Menu | server, theme and behaviour settings | same |
-| Back | press twice to exit | close guide |
+| Menu | settings | settings |
+| Back | press twice to exit | close the guide |
+
+**Settings** (Menu, or Up from the top row of the guide then the Settings button): theme, fullscreen behaviour, and the server's own switches (ad breaks, "coming up next" announcements, automatic rescans, pause/rewind buffer, scan now), so you can change them without a laptop.
 
 **Build** (needs JDK 17+ and the Android SDK, e.g. from Android Studio):
 
@@ -157,7 +181,7 @@ it needs Android 8 or newer.
 ```
 src/         Node.js server: scanner, channel inference, scheduler, live HLS broadcaster, API
 public/      Web UI (vanilla JS)
-android/     Android TV app (Kotlin, Compose, Media3)
+android/     Android TV app (Kotlin, Compose, Media3); unit tests: ./gradlew testDebugUnitTest
 Images/      Artwork (Assets) and screenshots (Screenshots)
 test/        Unit tests (npm test)
 Dockerfile   Node 24 + ffmpeg + yt-dlp + Piper (speech)
