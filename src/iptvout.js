@@ -86,16 +86,20 @@ export function registerIptvOut(app, db, getBroadcaster, getToken = () => '') {
     const b = getBroadcaster(c.id);
     b.touch(viewer);
     const keep = setInterval(() => b.touch(viewer), 8000);
+    let ff = null, gone = false;
+    // registered BEFORE the wait below: a client that gives up while the channel is starting must not leave an encoder behind
+    const cleanup = () => { if (gone) return; gone = true; clearInterval(keep); try { ff?.kill('SIGKILL'); } catch { /* already gone */ } b.leave(viewer); };
+    reply.raw.on('close', cleanup);
     // wait for the first segments, as the HLS route does
     const t0 = Date.now();
-    while (b.ready < 2 && Date.now() - t0 < 25000 && !b.stopped) await new Promise((r) => setTimeout(r, 200));
-    if (!b.playlist()) { clearInterval(keep); return reply.code(503).send('stream not ready'); }
+    while (b.ready < 2 && Date.now() - t0 < 25000 && !b.stopped && !gone) await new Promise((r) => setTimeout(r, 200));
+    if (gone) return reply;
+    if (!b.playlist()) { cleanup(); return reply.code(503).send('stream not ready'); }
     const keyArg = getToken() ? `&key=${encodeURIComponent(getToken())}` : '';
-    const ff = spawn(cfg.ffmpeg, ['-nostdin', '-v', 'error', '-fflags', '+genpts', '-i', `http://127.0.0.1:${cfg.port}/live/${c.id}/index.m3u8?v=${viewer}${keyArg}`,
+    ff = spawn(cfg.ffmpeg, ['-nostdin', '-v', 'error', '-fflags', '+genpts', '-i', `http://127.0.0.1:${cfg.port}/live/${c.id}/index.m3u8?v=${viewer}${keyArg}`,
       '-c', 'copy', '-f', 'mpegts', '-mpegts_flags', '+resend_headers', 'pipe:1'], { stdio: ['ignore', 'pipe', 'inherit'] });
-    const done = () => { clearInterval(keep); try { ff.kill('SIGKILL'); } catch {} b.leave(viewer); };
-    req.raw.on('close', done);
-    ff.on('exit', () => { clearInterval(keep); if (!reply.raw.writableEnded) reply.raw.end(); });
+    ff.on('error', cleanup);
+    ff.on('exit', () => { cleanup(); if (!reply.raw.writableEnded) reply.raw.end(); });
     return reply.header('Cache-Control', 'no-cache').type('video/mp2t').send(ff.stdout);
   });
 }
