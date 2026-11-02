@@ -132,15 +132,47 @@ const DEFAULTS = {
   movieStudioMinFilms: 5,
   movieDecadeChannels: true,
 };
+// ---- settings are validated on the way in AND on the way out, so one bad value (a blank box, "0", NaN) can never reach the scheduler
+const RANGES = {
+  pauseBufferMinutes: [0, 30], scanIntervalMinutes: [5, 1440], promoCount: [1, 4], promoMaxSeconds: [15, 120], alignMinutes: [1, 60],
+  breakEveryMinutes: [5, 180], breakLengthMinutes: [0.5, 15], minChannelMinutes: [0, 1000], movieStudioMinFilms: [1, 1000],
+};
+const ENUMS = { hwEncoder: ['auto', 'none', 'vaapi', 'nvenc'], streamHeight: [480, 576, 720] };
+const TIMES = new Set(['signOffFrom', 'signOffTo']);
+/** The value to store/use for this setting, or undefined if what was given is not usable. */
+export function fitSetting(key, v) {
+  const d = DEFAULTS[key];
+  if (typeof d === 'boolean') return v === true || v === 'true' || v === 1 ? true : v === false || v === 'false' || v === 0 ? false : undefined;
+  if (typeof d === 'number') {
+    if (v === null || v === '' || typeof v === 'boolean') return undefined;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return undefined;
+    if (ENUMS[key]) return ENUMS[key].includes(n) ? n : undefined;
+    const r = RANGES[key];
+    return r ? Math.min(r[1], Math.max(r[0], n)) : n;
+  }
+  if (typeof d === 'string') {
+    if (typeof v !== 'string') return undefined;
+    if (ENUMS[key] && !ENUMS[key].includes(v)) return undefined;
+    if (TIMES.has(key) && !/^\d{1,2}:\d{2}$/.test(v)) return undefined;
+    return v;
+  }
+  return v;
+}
 export function getSettings(db) {
   const out = { ...DEFAULTS };
   for (const r of db.prepare('SELECT key,value FROM settings').all()) {
-    if (r.key in DEFAULTS) try { out[r.key] = JSON.parse(r.value); } catch { /* ignore */ }
+    if (!(r.key in DEFAULTS)) continue;
+    try { const v = fitSetting(r.key, JSON.parse(r.value)); if (v !== undefined) out[r.key] = v; } catch { /* ignore */ }
   }
   return out;
 }
 export function setSettings(db, patch) {
   const st = db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
-  for (const [k, v] of Object.entries(patch)) if (k in DEFAULTS) st.run(k, JSON.stringify(v));
+  for (const [k, v] of Object.entries(patch)) {
+    if (!(k in DEFAULTS)) continue;
+    const fit = fitSetting(k, v);
+    if (fit !== undefined) st.run(k, JSON.stringify(fit)); // unusable values are ignored, the previous setting stays
+  }
   return getSettings(db);
 }

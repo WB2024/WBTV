@@ -103,6 +103,12 @@ function fillAds(ads, target, exact, state, year = null) {
 
 export const IDENT_SECONDS = 5;
 
+/** How many parts a programme of D seconds is cut into: one ad break roughly every `everyMinutes`. Always finite, whatever the setting. */
+export function breakSegments(D, everyMinutes) {
+  const every = (Number(everyMinutes) > 0 ? Number(everyMinutes) : 20) * 60;
+  return Math.min(40, Math.max(2, Math.round(D / every)));
+}
+
 const toMinutes = (hhmm, fallback) => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
   return m ? Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2])) : fallback;
@@ -203,7 +209,7 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
       // split into segments with ad breaks between
       let cuts = [];
       if (useAds && D >= 15 * 60) {
-        const segs = Math.max(2, Math.round(D / (settings.breakEveryMinutes * 60)));
+        const segs = breakSegments(D, settings.breakEveryMinutes);
         for (let k = 1; k < segs; k++) cuts.push(D * k / segs + rand(-0.06, 0.06) * (D / segs));
       }
       const bounds = [0, ...cuts, D];
