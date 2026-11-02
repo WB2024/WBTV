@@ -68,7 +68,7 @@ export async function scanLibrary(db, lib, progress) {
   };
   const queue = (r) => { batch.push(r.map((v) => (v === undefined ? null : v))); progress.changed++; if (batch.length >= 400) flush(); };
 
-  const selShow = db.prepare('SELECT id FROM shows WHERE path=?');
+  const selShow = db.prepare('SELECT id,title,plot,year,rating,mpaa,studios,genres,poster FROM shows WHERE path=?');
   const insShow = db.prepare('INSERT INTO shows(library_id,path,title,plot,year,rating,mpaa,studios,genres,poster) VALUES(?,?,?,?,?,?,?,?,?,?)');
   const updShow = db.prepare('UPDATE shows SET title=?,plot=?,year=?,rating=?,mpaa=?,studios=?,genres=?,poster=? WHERE id=?');
 
@@ -81,7 +81,14 @@ export async function scanLibrary(db, lib, progress) {
       nfo?.rating ?? null, nfo?.mpaa || '', j(nfo?.studios), j(nfo?.genres), poster ? path.join(dir, poster) : null,
     ];
     const ex = selShow.get(dir);
-    if (ex) { updShow.run(...row, ex.id); return { id: ex.id, nfo }; }
+    if (ex) {
+      // a changed tvshow.nfo (studio, genre...) alters the channels even when no episode file changed, so it counts as a change
+      const now = [ex.title, ex.plot, ex.year, ex.rating, ex.mpaa, ex.studios, ex.genres, ex.poster];
+      if (row.some((v, i) => (v ?? null) !== (now[i] ?? null))) progress.changed++;
+      updShow.run(...row, ex.id);
+      return { id: ex.id, nfo };
+    }
+    progress.changed++;
     const r = insShow.run(lib.id, dir, ...row);
     return { id: Number(r.lastInsertRowid), nfo };
   }

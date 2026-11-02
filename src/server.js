@@ -50,7 +50,9 @@ async function runScan(libraryIds, auto = false) {
     scan.phase = 'reading durations';
     await probePending(db, (done, total) => { scan.probe = `${done}/${total}`; });
     scan.phase = 'building channels';
-    inferChannels(db);
+    // Channel inference is heavy (over a second of blocked server on a large library), so only redo it when the scan actually
+    // found something new or gone; the usual hourly rescan of an unchanged library then costs nothing.
+    if (scan.changed > 0 || scan.removed > 0 || !db.prepare('SELECT 1 FROM channels LIMIT 1').get()) inferChannels(db);
     syncLiveChannels(db);
     checkStreams(db).then((n) => { if (n) { syncLiveChannels(db); } }).catch((e) => console.error('stream check failed', e));
     scan.phase = 'scheduling';
