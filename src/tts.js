@@ -5,6 +5,7 @@ import path from 'node:path';
 import { cfg } from './config.js';
 import { run, probe } from './media.js';
 import { Readable } from 'node:stream';
+import os from 'node:os';
 import { LEAD_IN, SEG_GAP, WORDS_PER_SECOND } from './promo.js';
 import { speakable } from './speech.js';
 
@@ -90,16 +91,29 @@ export async function installVoice(id) {
   } finally { installing.delete(id); }
 }
 
-// at most two Piper processes at once
-let active = 0;
-const waiting = [];
-const slot = () => new Promise((res) => { if (active < 2) { active++; res(); } else waiting.push(res); });
-const release = () => { const n = waiting.shift(); if (n) n(); else active--; };
+/**
+ * Runs jobs at most `max` at a time. A job is skipped (rejects with 'cancelled') if `alive()` is false by the time its turn comes, so work
+ * queued for a channel nobody is watching any more costs nothing.
+ */
+export function makeLimiter(max) {
+  let active = 0;
+  const waiting = [];
+  const next = () => { while (active < max && waiting.length) { active++; waiting.shift()(); } };
+  return async (fn, alive) => {
+    await new Promise((res) => { waiting.push(res); next(); });
+    try {
+      if (alive && !alive()) throw new Error('cancelled');
+      return await fn();
+    } finally { active--; next(); }
+  };
+}
+const limit = makeLimiter(2); // at most two Piper processes at once
 
 function piper(text, voice, outFile) {
   return new Promise((resolve, reject) => {
     const p = spawn(cfg.piperBin, ['--model', voicePath(voice), '--output_file', outFile, '--length_scale', '1.05', '--sentence_silence', '0.2'],
       { stdio: ['pipe', 'ignore', 'pipe'], cwd: path.dirname(cfg.piperBin) });
+    try { os.setPriority(p.pid, 15); } catch { /* background work: always yield the CPU to the live streams */ }
     let err = '';
     p.stderr.on('data', (d) => (err = (err + d).slice(-500)));
     p.on('error', reject);
@@ -109,16 +123,15 @@ function piper(text, voice, outFile) {
 }
 
 /** One sentence of speech -> wav file (cached by content). */
-async function synth(raw, voice) {
+async function synth(raw, voice, alive) {
   const text = speakable(raw); // numbers, years, abbreviations and punctuation the way a person would say them
   const key = crypto.createHash('sha1').update(`${voice}|1.05|${text}`).digest('hex');
   fs.mkdirSync(cacheDir(), { recursive: true });
   const file = path.join(cacheDir(), `s_${key}.wav`);
   if (fs.existsSync(file)) return file;
-  await slot();
-  try {
+  await limit(async () => {
     if (!fs.existsSync(file)) { const tmp = file + '.tmp.wav'; await piper(text, voice, tmp); fs.renameSync(tmp, file); }
-  } finally { release(); }
+  }, alive);
   return file;
 }
 
@@ -139,7 +152,7 @@ export function cached(segments, voice) {
  * Narration for one announcement -> { file, dur, cues:[{label,title,start,end}] } (cues are seconds from the start).
  * Returns null if speech isn't available; callers then play the picture without a voice.
  */
-export function prepare(promoId, segments, voice) {
+export function prepare(promoId, segments, voice, alive) {
   if (!ttsReady(voice)) return Promise.resolve(null);
   const key = narrationKey(segments, voice);
   if (inflight.has(key)) return inflight.get(key);
@@ -147,7 +160,7 @@ export function prepare(promoId, segments, voice) {
     fs.mkdirSync(cacheDir(), { recursive: true });
     const meta = path.join(cacheDir(), `p_${key}.json`);
     if (fs.existsSync(meta)) { const m = JSON.parse(fs.readFileSync(meta, 'utf8')); if (fs.existsSync(m.file)) return m; }
-    const wavs = await Promise.all(segments.map((s) => synth(s.text, voice)));
+    const wavs = await Promise.all(segments.map((s) => synth(s.text, voice, alive)));
     const durs = await Promise.all(wavs.map(async (w) => (await probe(w))?.duration || 0));
     const out = path.join(cacheDir(), `p_${key}.wav`);
     // lead-in silence, then each announcement followed by a short pause

@@ -66,6 +66,9 @@ export class Broadcaster {
     fs.mkdirSync(this.dir, { recursive: true });
     const kind = this.db.prepare('SELECT kind FROM channels WHERE id=?').get(this.id)?.kind;
     (kind === 'live' ? this.loopLive() : this.loop()).catch((e) => console.error(`[ch${this.id}] broadcaster crashed`, e));
+    // The loop only looks ahead when a piece starts, and a programme can be one 40 minute piece: also look on the wall clock, so the
+    // next announcement's voice-over is generated well before it airs.
+    this.warmTimer = setInterval(() => this.warmNarration(Date.now() / 1000 + LEAD), 15000);
     this.reaper = setInterval(() => {
       const cut = Date.now() - 25000;
       for (const [v, t] of this.viewers) if (t < cut) this.viewers.delete(v);
@@ -85,7 +88,7 @@ export class Broadcaster {
     if (this.stopped) return;
     this.dlog('stop');
     this.stopped = true;
-    clearInterval(this.reaper);
+    clearInterval(this.reaper); clearInterval(this.warmTimer);
     try { this.proc?.kill('SIGKILL'); } catch { /* gone */ }
     setTimeout(() => fs.rmSync(this.dir, { recursive: true, force: true }), 500);
     this.onStop?.(this.id);
@@ -214,9 +217,10 @@ export class Broadcaster {
     try {
       const up = this.db.prepare("SELECT promo_id FROM blocks WHERE channel_id=? AND kind='promo' AND end>? AND start<? ORDER BY start LIMIT 1").get(this.id, cursor, cursor + 150);
       if (!up || this.warmed === up.promo_id) return;
+      if (Date.now() - this.startedAt < 15000) return; // just tuned in, perhaps channel-surfing: do not queue speech for a channel that may be left in a second
       this.warmed = up.promo_id;
       const p = this.db.prepare('SELECT * FROM promos WHERE id=?').get(up.promo_id);
-      if (p) prepareNarration(p.id, JSON.parse(p.segments), getSettings(this.db).promoVoice).catch(() => {});
+      if (p) prepareNarration(p.id, JSON.parse(p.segments), getSettings(this.db).promoVoice, () => !this.stopped).catch(() => {});
     } catch { /* best effort */ }
   }
 
@@ -235,7 +239,7 @@ export class Broadcaster {
         narr = cachedNarration(segments, voice);
         if (!narr) {
           // never keep a viewer waiting for the voice to be synthesised: give a nearly finished one a moment, else play the slot without it
-          const job = prepareNarration(promo.id, segments, voice);
+          const job = prepareNarration(promo.id, segments, voice, () => !this.stopped);
           job.catch(() => {});
           // tuning in (nothing produced yet): do not wait at all; otherwise a nearly finished voice-over gets a moment
           narr = await Promise.race([job, new Promise((r) => setTimeout(() => r(null), this.segs.length ? 1500 : 0))]);
