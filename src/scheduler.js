@@ -380,7 +380,8 @@ export function ensureSchedule(db, now = Date.now() / 1000) {
       const ctx = planContext(db);
       const chans = db.prepare("SELECT id, kind FROM channels WHERE enabled=1 AND item_count>0 AND kind<>'live'").all();
       for (const c of chans) {
-        extendOne(db, c, ctx, now);
+        // one channel with odd data must never stop every channel after it from being planned
+        try { extendOne(db, c, ctx, now); } catch (e) { console.error(`[plan] channel ${c.id} could not be planned: ${e?.message || e}`); }
         await new Promise((r) => setImmediate(r));
       }
       prune(db, now);

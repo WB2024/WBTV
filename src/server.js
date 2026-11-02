@@ -44,10 +44,13 @@ async function runScan(libraryIds, auto = false) {
     const libs = libraryIds
       ? db.prepare(`SELECT * FROM libraries WHERE id IN (${libraryIds.map(() => '?').join(',')})`).all(...libraryIds)
       : db.prepare('SELECT * FROM libraries').all();
+    const failed = [];
     for (const lib of libs) {
       scan.library = lib.name;
-      await scanLibrary(db, lib, scan);
+      // a library that cannot be read (unmounted share, permissions) must not stop the others being scanned
+      try { await scanLibrary(db, lib, scan); } catch (e) { failed.push(lib.name); console.error(`scan of "${lib.name}" failed:`, e?.message || e); }
     }
+    if (failed.length) scan.error = `Could not scan: ${failed.join(', ')}`;
     scan.phase = 'reading durations';
     await probePending(db, (done, total) => { scan.probe = `${done}/${total}`; });
     scan.phase = 'building channels';

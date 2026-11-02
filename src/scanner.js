@@ -13,6 +13,25 @@ const EXTRA_DIR = /^(extras?|featurettes?|trailers?|samples?|behind the scenes|d
 const SEASON_DIR = /^(season|series|specials?|s)\s*\d*/i;
 const IMG = ['.jpg', '.jpeg', '.png', '.webp'];
 
+/**
+ * Which of the files that were not seen this scan should really be removed from the database?
+ * An offline share (or an empty mount point) looks exactly like "every file was deleted", and believing it wipes the library and its
+ * schedule. So: nothing under a folder we failed to read is ever removed, and when nearly everything seems to have vanished we keep it all
+ * until a second scan agrees. Returns the paths that are safe to remove.
+ */
+export function safeRemovals(db, lib, gone, total, seenCount, unreadable) {
+  const under = (p) => unreadable.some((d) => p === d || p.startsWith(d + path.sep) || p.startsWith(d + '/'));
+  const candidates = gone.filter((p) => !under(p));
+  const key = `scanguard_${lib.id}`;
+  const suspicious = total > 0 && (seenCount === 0 || (total >= 20 && candidates.length > total * 0.5));
+  if (!suspicious) { db.prepare('DELETE FROM settings WHERE key=?').run(key); return candidates; }
+  const prev = Number(db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value) || 0;
+  if (prev && Date.now() - prev < 6 * 3600 * 1000) { db.prepare('DELETE FROM settings WHERE key=?').run(key); return candidates; } // two scans in a row agree
+  db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(key, String(Date.now()));
+  console.error(`[scan] "${lib.name}": ${candidates.length} of ${total} known files look gone (is the share offline?); keeping them until the next scan confirms`);
+  return [];
+}
+
 class Pool {
   constructor(n) { this.n = n; this.active = 0; this.q = []; }
   run(fn) {
@@ -52,6 +71,7 @@ export async function scanLibrary(db, lib, progress) {
   const existing = new Map();
   for (const r of db.prepare('SELECT path,mtime,size,nfo_mtime FROM items WHERE library_id=?').all(lib.id)) existing.set(r.path, r);
   const seen = new Set();
+  const unreadable = []; // folders we could not list this scan: what is under them is not "gone", just unknown
   let batch = [];
 
   const upsertItem = db.prepare(`INSERT INTO items
@@ -137,7 +157,7 @@ export async function scanLibrary(db, lib, progress) {
 
   async function visit(dir, show) {
     let entries;
-    try { entries = await readdir(dir); } catch { return; }
+    try { entries = await readdir(dir); } catch { unreadable.push(dir); return; }
     progress.dirs++;
     const names = new Map(entries.filter((e) => e.isFile()).map((e) => [e.name.toLowerCase(), e.name]));
     if (lib.type === 'tv' && names.has('tvshow.nfo')) show = await loadShow(dir, names);
@@ -160,7 +180,7 @@ export async function scanLibrary(db, lib, progress) {
   flush();
 
   // remove vanished files (only reached if the walk completed)
-  const gone = [...existing.keys()].filter((p) => !seen.has(p));
+  const gone = safeRemovals(db, lib, [...existing.keys()].filter((p) => !seen.has(p)), existing.size, seen.size, unreadable);
   progress.removed = (progress.removed || 0) + gone.length;
   if (gone.length) {
     const del = db.prepare('DELETE FROM items WHERE path=?');
@@ -204,6 +224,7 @@ async function scanRadio(db, lib, progress) {
   const kind = talk ? 'talk' : 'track';
   const existing = new Map(db.prepare('SELECT path,mtime,size FROM items WHERE library_id=?').all(lib.id).map((r) => [r.path, r]));
   const seen = new Set();
+  const unreadable = [];
   const probes = new Pool(8);
   const ins = db.prepare(`INSERT INTO items (library_id,kind,path,title,year,runtime,probed,genres,actors,poster,mtime,size,artist,album,studios,plot,season,episode,aired)
     VALUES (?,?,?,?,?,?,1,?,'[]',?,?,?,?,?,'[]',?,?,?,?) ON CONFLICT(path) DO UPDATE SET kind=excluded.kind,title=excluded.title,year=excluded.year,runtime=excluded.runtime,
@@ -215,7 +236,7 @@ async function scanRadio(db, lib, progress) {
 
   async function visit(dir, depth) {
     let entries;
-    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { unreadable.push(dir); return; }
     progress.dirs++;
     const names = new Map(entries.filter((e) => e.isFile()).map((e) => [e.name.toLowerCase(), e.name]));
     const cover = COVERS.flatMap((c) => IMG.map((x) => c + x)).map((n) => names.get(n)).find(Boolean);
@@ -256,7 +277,7 @@ async function scanRadio(db, lib, progress) {
   }
   await visit(lib.path, 0);
   flush();
-  const gone = [...existing.keys()].filter((p) => !seen.has(p));
+  const gone = safeRemovals(db, lib, [...existing.keys()].filter((p) => !seen.has(p)), existing.size, seen.size, unreadable);
   if (gone.length) { const del = db.prepare('DELETE FROM items WHERE path=?'); tx(db, () => { for (const p of gone) del.run(p); }); progress.removed = (progress.removed || 0) + gone.length; }
   db.prepare('UPDATE libraries SET last_scan=? WHERE id=?').run(Date.now(), lib.id);
 }
@@ -265,8 +286,9 @@ async function scanAdsLibrary(db, lib, progress) {
   const kind = { ads_tv: 'tv', ads_movies: 'movie' }[lib.type] || 'all';
   db.prepare('UPDATE ads SET kind=? WHERE library_id=?').run(kind, lib.id);
   const files = [];
+  const unreadable = [];
   async function walk(d) {
-    let es; try { es = await fs.readdir(d, { withFileTypes: true }); } catch { return; }
+    let es; try { es = await fs.readdir(d, { withFileTypes: true }); } catch { unreadable.push(d); return; }
     for (const e of es) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) await walk(p);
@@ -276,6 +298,7 @@ async function scanAdsLibrary(db, lib, progress) {
   await walk(lib.path);
   progress.files = files.length;
   const known = new Map(db.prepare('SELECT source,id FROM ads WHERE library_id=?').all(lib.id).map((r) => [r.source, r.id]));
+  const knownTotal = known.size;
   const ins = db.prepare("INSERT INTO ads(title,source,file,duration,status,library_id,kind) VALUES(?,?,?,?,?,?,?)");
   let i = 0;
   await Promise.all(Array.from({ length: 4 }, async () => {
@@ -286,7 +309,9 @@ async function scanAdsLibrary(db, lib, progress) {
       try { ins.run(path.parse(f).name, f, f, p?.duration || 0, p ? 'ready' : 'error', lib.id, kind); progress.changed++; } catch { /* dup */ }
     }
   }));
-  for (const id of known.values()) {
+  const removable = new Set(safeRemovals(db, lib, [...known.keys()], knownTotal, files.length, unreadable));
+  for (const [source, id] of known) {
+    if (!removable.has(source)) continue;
     db.prepare('UPDATE blocks SET ad_id=NULL WHERE ad_id=?').run(id);
     db.prepare('DELETE FROM ads WHERE id=?').run(id);
   }
