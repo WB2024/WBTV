@@ -5,7 +5,9 @@ import crypto from 'node:crypto';
 import { cfg } from './config.js';
 import { logoFile } from './logos.js';
 
-const esc = (s) => String(s ?? '').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
+// XML 1.0 forbids most control characters outright, and one stray byte in a scraped title makes a strict parser (Plex, Jellyfin) reject the whole guide
+const XML_BAD = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+export const esc = (s) => String(s ?? '').replace(XML_BAD, '').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 const attr = (s) => String(s ?? '').replace(/"/g, "'").replace(/[\r\n]+/g, ' ');
 const xmltvTime = (t) => {
   const d = new Date(t * 1000), p = (n) => String(n).padStart(2, '0');
