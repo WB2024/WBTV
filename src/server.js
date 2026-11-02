@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { cfg } from './config.js';
 import { openDb, getSettings, setSettings } from './db.js';
@@ -16,7 +17,7 @@ import { initAuth } from './auth.js';
 import { logoFile, saveLogo, removeLogo, MIME } from './logos.js';
 import { hw, detectHw } from './hw.js';
 import { registerIptvOut } from './iptvout.js';
-import { ttsStatus, sample, pruneCache, installVoice, VOICES } from './tts.js';
+import { ttsStatus, sample, pruneCache, installVoice, speechQueue, VOICES } from './tts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = openDb(cfg.configDir);
@@ -298,6 +299,21 @@ app.get('/api/channels/:id/now', (req) => {
 // ---------------------------------------------------------------- settings & ads
 app.get('/api/settings', () => getSettings(db));
 app.get('/api/hw', () => hw);
+// What the server is doing right now: handy when something feels slow
+app.get('/api/status', () => ({
+  version: JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version,
+  uptimeSeconds: Math.round(process.uptime()),
+  memoryMB: Math.round(process.memoryUsage().rss / 1048576),
+  load: os.loadavg().map((n) => Number(n.toFixed(2))),
+  cpus: os.cpus().length,
+  streamHeight: cfg.height,
+  encoder: hw.active,
+  scanning: scan.running ? scan.phase : null,
+  speechQueue: speechQueue(),
+  broadcasters: [...live.values()].filter((b) => !b.stopped).map((b) => ({
+    channel: b.id, name: b.chInfo().name, viewers: b.viewers.size, segments: b.segs.length, ageSeconds: Math.round((Date.now() - b.startedAt) / 1000),
+  })),
+}));
 app.put('/api/settings', async (req) => {
   const before = getSettings(db);
   const body = { ...(req.body || {}) };

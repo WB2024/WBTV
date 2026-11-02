@@ -54,6 +54,7 @@ A missing or wrong credential returns `401 {"error":"login required"}`.
 | Method & path | Notes |
 |---|---|
 | `GET /api/settings`, `PUT /api/settings` | Partial update, e.g. `{adsEnabled:true}`. Credentials are never included |
+| `GET /api/status` | What the server is doing now: version, uptime, memory, CPU load, running channels with viewer counts, voice-over queue. Useful when something feels slow |
 | `GET /api/hw` | Which video encoder is active (`software`, `vaapi`, `nvenc`) and why |
 | `GET /api/ads`, `POST /api/ads`, `DELETE /api/ads/:id` | Ad URLs (`POST {urls, kind}`) |
 | `GET /api/promo/status`, `GET /api/promo/sample?voice=` | "Coming up next" voices |

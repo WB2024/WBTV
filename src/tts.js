@@ -99,15 +99,18 @@ export function makeLimiter(max) {
   let active = 0;
   const waiting = [];
   const next = () => { while (active < max && waiting.length) { active++; waiting.shift()(); } };
-  return async (fn, alive) => {
+  const run = async (fn, alive) => {
     await new Promise((res) => { waiting.push(res); next(); });
     try {
       if (alive && !alive()) throw new Error('cancelled');
       return await fn();
     } finally { active--; next(); }
   };
+  run.stats = () => ({ running: active, waiting: waiting.length });
+  return run;
 }
 const limit = makeLimiter(2); // at most two Piper processes at once
+export const speechQueue = () => limit.stats();
 
 function piper(text, voice, outFile) {
   return new Promise((resolve, reject) => {
