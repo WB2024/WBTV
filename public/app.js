@@ -180,8 +180,8 @@ async function tune(ci) {
     hls.loadSource(url); hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
     hls.on(Hls.Events.ERROR, (_, d) => {
-      if (!d.fatal) return;
-      if (d.type === Hls.ErrorTypes.NETWORK_ERROR) setTimeout(() => hls.startLoad(), 2000);
+      if (!d.fatal || S.hls !== hls) return; // not this channel any more
+      if (d.type === Hls.ErrorTypes.NETWORK_ERROR) setTimeout(() => { if (S.hls === hls) hls.startLoad(); }, 2000);
       else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
     });
   } else { video.src = url; video.play().catch(() => {}); }
