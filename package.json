@@ -1,0 +1,15 @@
+{
+  "name": "wbtv",
+  "version": "0.1.0",
+  "description": "Self-hosted EPG / fake-live-TV for your own media library",
+  "type": "module",
+  "private": true,
+  "scripts": { "start": "node src/server.js" },
+  "engines": { "node": ">=22.13" },
+  "dependencies": {
+    "@fastify/static": "^8.0.0",
+    "fast-xml-parser": "^5.0.0",
+    "fastify": "^5.0.0",
+    "hls.js": "^1.5.0"
+  }
+}
