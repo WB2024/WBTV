@@ -12,5 +12,8 @@ export const cfg = {
   ffmpeg: env.FFMPEG_PATH || 'ffmpeg',
   ffprobe: env.FFPROBE_PATH || 'ffprobe',
   ytdlp: env.YTDLP_PATH || 'yt-dlp',
+  piperBin: env.PIPER_BIN || '/opt/piper/piper',
+  voiceDir: env.PIPER_VOICES || '/opt/piper/voices',
+  fontFile: env.WBTV_FONT || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
   scanConcurrency: Number(env.WBTV_SCAN_CONCURRENCY || 24),
 };

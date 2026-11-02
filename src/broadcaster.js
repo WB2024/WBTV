@@ -4,6 +4,8 @@ import path from 'node:path';
 import { cfg } from './config.js';
 import { probe } from './media.js';
 import { REEL } from './scheduler.js';
+import { getSettings } from './db.js';
+import { prepare as prepareNarration } from './tts.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
 const SEG_SECONDS = 4;
@@ -111,10 +113,11 @@ export class Broadcaster {
       let dur, produced = 0, ok = false;
       const burst = Math.max(1, LEAD - (cursor - wall));
       let plan = null;
+      this.warmNarration(cursor);
       if (block && (block.kind !== 'ad' || block.file)) {
         dur = block.end - cursor;
         if (dur < 0.05) { cursor = block.end + 0.01; continue; }
-        plan = { file: block.file, offset: block.in_point + (cursor - block.start) };
+        plan = { file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start };
       } else {
         // a hole in the schedule, or an ad that has since been removed: fill with a real ad, not the test card
         const until = block ? block.end : this.db.prepare('SELECT MIN(start) AS s FROM blocks WHERE channel_id=? AND start>?').get(this.id, cursor)?.s;
@@ -126,7 +129,9 @@ export class Broadcaster {
       if (plan && plan.file) {
         const info = await probe(plan.file);
         if (info && !this.stopped) {
-          produced = await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst);
+          produced = plan.promo
+            ? await this.runPromo(plan, dur, info.hasAudio, burst)
+            : await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst);
           ok = produced > 0.5;
         }
       }
@@ -145,6 +150,68 @@ export class Broadcaster {
       const ahead = cursor - Date.now() / 1000 - LEAD - 2;
       if (ahead > 0) await sleep(ahead * 1000);
     }
+  }
+
+  /** Start synthesising the voice-over for an upcoming announcement so it is ready when it airs. */
+  warmNarration(cursor) {
+    try {
+      const up = this.db.prepare("SELECT promo_id FROM blocks WHERE channel_id=? AND kind='promo' AND end>? AND start<? ORDER BY start LIMIT 1").get(this.id, cursor, cursor + 150);
+      if (!up || this.warmed === up.promo_id) return;
+      this.warmed = up.promo_id;
+      const p = this.db.prepare('SELECT * FROM promos WHERE id=?').get(up.promo_id);
+      if (p) prepareNarration(p.id, JSON.parse(p.segments), getSettings(this.db).promoVoice).catch(() => {});
+    } catch { /* best effort */ }
+  }
+
+  /**
+   * "Coming up next" slot: a clip from inside the next programme (its own sound ducked), the announcer's
+   * voice on top, and UP NEXT / AFTER THAT / LATER captions timed to the speech.
+   */
+  async runPromo(plan, dur, hasAudio, burst) {
+    const b = plan.promo;
+    const promo = this.db.prepare('SELECT * FROM promos WHERE id=?').get(b.promo_id);
+    const segments = promo ? JSON.parse(promo.segments) : [];
+    let narr = null;
+    try { if (segments.length) narr = await prepareNarration(promo.id, segments, getSettings(this.db).promoVoice); }
+    catch (e) { console.error(`[ch${this.id}] narration failed: ${e.message}`); }
+
+    const e = this.encodeArgs();
+    const el = Math.max(0, plan.elapsed); // joined part-way through the slot: skip into the voice-over and captions too
+    const args = ['-hide_banner', '-loglevel', 'error', '-nostdin',
+      '-ss', plan.offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', plan.file];
+    if (narr) args.push('-ss', el.toFixed(3), '-i', narr.file);
+
+    // captions
+    let v = `[0:v:0]${e.vf}`;
+    if (fs.existsSync(cfg.fontFile) && segments.length) {
+      const cues = narr ? narr.cues : [{ label: segments[0].label, title: segments[0].title, start: 0, end: 1e6 }];
+      const dir = path.join(this.dir, 'captions');
+      fs.mkdirSync(dir, { recursive: true });
+      const f1 = Math.round(cfg.height * 0.032), f2 = Math.round(cfg.height * 0.05);
+      cues.forEach((c, i) => {
+        const a = (c.start - 0.3 - el).toFixed(2);
+        const z = ((i < cues.length - 1 ? cues[i + 1].start - 0.3 : 1e6) - el).toFixed(2);
+        const en = `enable='between(t,${a},${z})'`;
+        const title = c.title.length > 42 ? c.title.slice(0, 41) + '…' : c.title;
+        const lf = path.join(dir, `${this.runNo}_${i}_l.txt`), tf = path.join(dir, `${this.runNo}_${i}_t.txt`);
+        fs.writeFileSync(lf, c.label); fs.writeFileSync(tf, title);
+        v += `,drawbox=x=0:y=ih*0.79:w=iw:h=ih*0.16:color=black@0.72:t=fill:${en}` +
+          `,drawtext=fontfile=${cfg.fontFile}:textfile=${lf}:x=w*0.045:y=h*0.805:fontsize=${f1}:fontcolor=0xffd400:${en}` +
+          `,drawtext=fontfile=${cfg.fontFile}:textfile=${tf}:x=w*0.045:y=h*0.855:fontsize=${f2}:fontcolor=white:${en}`;
+      });
+    }
+    v += '[v]';
+
+    // sound: preview clip quietly underneath, announcer on top
+    const fmt = 'aresample=48000,aformat=channel_layouts=stereo';
+    let a;
+    if (narr && hasAudio) a = `[0:a:0]volume=0.18,${fmt}[a0];[1:a]${fmt},volume=0.85,apad[a1];[a0][a1]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]`;
+    else if (narr) a = `[1:a]${fmt},volume=0.85,apad,alimiter=limit=0.95[a]`;
+    else if (hasAudio) a = `[0:a:0]volume=0.5,${fmt}[a]`;
+    else { args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo'); a = `[${narr ? 2 : 1}:a]${fmt}[a]`; }
+
+    args.push('-t', dur.toFixed(3), '-filter_complex', `${v};${a}`, '-map', '[v]', '-map', '[a]', ...e.codec);
+    return this.runFfmpeg(args);
   }
 
   /** Pick an ad (matching this channel's type) to cover `gap` seconds of schedule hole. */

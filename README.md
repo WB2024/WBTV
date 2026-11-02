@@ -36,6 +36,7 @@ and (if you like) nostalgic ad breaks.
 - **Fast, incremental scans** that lean on NFO data (including `durationinseconds`, so ffprobe is rarely needed). Rescans run automatically on a timer.
 - **A real schedule.** Planned ahead and persisted, so the guide and the stream always agree, with history you can scroll back to. Every viewer of a channel shares one live stream.
 - **Ad breaks (optional).** Add YouTube / archive.org / direct links (downloaded once with yt-dlp) or point at local folders tagged *TV* or *Movies* (so trailers only play on movie channels). Long ad-break compilations are supported: each break plays a random chunk, like joining a recorded break in progress.
+- **"Coming up next" announcements.** After each programme a continuity slot plays: a clip from inside the next programme with a voice reading out what's on next and after that, using each programme's description (with sensible fallbacks), plus UP NEXT / AFTER THAT / LATER captions. The voice is generated locally with [Piper](https://github.com/rhasspy/piper): offline, free, no AI service. Two British voices (Alan and Jenny).
 - **Seven themes**: Classic, Vintage, 90s, Modern, Aero, Teletext and Synthwave, on the web and on Android TV.
 - **Android TV app** with a proper remote-control experience (see below).
 
@@ -71,6 +72,7 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 | `WBTV_CRF` | `23` | x264 quality (lower = better and bigger) |
 | `WBTV_PRESET` | `veryfast` | x264 speed preset |
 | `WBTV_BROWSE_ROOTS` | `/mnt,/media,/data` | Folders the in-app folder browser may show |
+| `PIPER_BIN` / `PIPER_VOICES` | `/opt/piper/piper` / `/opt/piper/voices` | Speech engine and voice folder (already in the image) |
 
 > **No authentication.** WBTV is designed for your home network. Don't expose it to the internet.
 
@@ -82,14 +84,18 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 </p>
 <p align="center">
   <img src="Images/Screenshots/web-setup-ads.jpg" alt="Ads" width="48%">
+  <img src="Images/Screenshots/web-setup-announcements.jpg" alt="Announcements" width="48%">
+</p>
+<p align="center">
   <img src="Images/Screenshots/web-setup-settings.jpg" alt="Settings" width="48%">
 </p>
 
 1. **Libraries**: add a folder and say what's in it. *TV Shows* and *Movies* feed channels; *Ads* folders feed ad breaks.
 2. **Channels**: check what was built, rename or renumber things, switch channels off.
 3. **Ads** (optional): turn on ad breaks, set how long and how often, add ad folders or links.
-4. **Settings**: automatic rescans, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
-5. **Appearance**: pick a theme, and choose whether selecting a programme jumps straight to fullscreen.
+4. **Announcements**: switch the "coming up next" voice-overs on or off, pick the voice (with a sample button), and choose how many programmes to mention and how long it may run.
+5. **Settings**: automatic rescans, and how many channels get created (minimum channel size, genre channels for every show, movie studio and decade channels).
+6. **Appearance**: pick a theme, and choose whether selecting a programme jumps straight to fullscreen.
 
 ## Themes
 
@@ -153,7 +159,8 @@ src/         Node.js server: scanner, channel inference, scheduler, live HLS bro
 public/      Web UI (vanilla JS)
 android/     Android TV app (Kotlin, Compose, Media3)
 Images/      Artwork (Assets) and screenshots (Screenshots)
-Dockerfile   Node 24 + ffmpeg + yt-dlp
+test/        Unit tests (npm test)
+Dockerfile   Node 24 + ffmpeg + yt-dlp + Piper (speech)
 ```
 
 <p align="center">

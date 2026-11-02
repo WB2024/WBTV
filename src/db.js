@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS blocks (
   programme_id INTEGER REFERENCES programmes(id) ON DELETE CASCADE,
   kind TEXT NOT NULL, item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
   ad_id INTEGER REFERENCES ads(id) ON DELETE CASCADE,
-  in_point REAL NOT NULL DEFAULT 0, start REAL NOT NULL, end REAL NOT NULL
+  in_point REAL NOT NULL DEFAULT 0, start REAL NOT NULL, end REAL NOT NULL, promo_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS promos (
+  id INTEGER PRIMARY KEY, segments TEXT NOT NULL, est REAL
 );
 CREATE INDEX IF NOT EXISTS idx_blocks ON blocks(channel_id, start);
 CREATE INDEX IF NOT EXISTS idx_blocks_prog ON blocks(programme_id);
@@ -77,6 +80,8 @@ function migrate(db) {
       INSERT INTO libraries_new SELECT id,name,path,type,last_scan FROM libraries; DROP TABLE libraries; ALTER TABLE libraries_new RENAME TO libraries;`);
     db.exec('COMMIT; PRAGMA foreign_keys=ON;');
   }
+  // older DBs: blocks.promo_id (announcement slots)
+  if (!db.prepare('PRAGMA table_info(blocks)').all().some((c) => c.name === 'promo_id')) db.exec('ALTER TABLE blocks ADD COLUMN promo_id INTEGER');
   // older DBs: ads.kind
   if (!db.prepare('PRAGMA table_info(ads)').all().some((c) => c.name === 'kind')) {
     db.exec("ALTER TABLE ads ADD COLUMN kind TEXT NOT NULL DEFAULT 'all'");
@@ -92,6 +97,11 @@ const DEFAULTS = {
   autoScan: true,          // rescan libraries periodically
   scanIntervalMinutes: 60,
   scanOnStartup: true,
+  promosEnabled: true,     // "coming up next" announcements between programmes
+  promoVoice: 'alan',
+  promoCount: 3,           // how many upcoming programmes to mention
+  promoMaxSeconds: 60,
+  promoReadPlots: true,
   adsEnabled: false,
   alignMinutes: 5,        // programmes start on this grid when ads are on
   breakEveryMinutes: 20,  // roughly one mid-programme break per N minutes

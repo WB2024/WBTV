@@ -11,6 +11,7 @@ import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './sched
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
 import { addAdUrls, processAds, removeAd } from './ads.js';
+import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = openDb(cfg.configDir);
@@ -184,7 +185,11 @@ app.get('/api/channels/:id/now', (req) => {
 app.get('/api/settings', () => getSettings(db));
 app.put('/api/settings', async (req) => {
   const before = getSettings(db);
-  const after = setSettings(db, req.body || {});
+  const body = { ...(req.body || {}) };
+  if ('promoVoice' in body && !VOICES[body.promoVoice]) delete body.promoVoice;
+  if ('promoCount' in body) body.promoCount = Math.min(4, Math.max(1, Math.round(Number(body.promoCount) || 3)));
+  if ('promoMaxSeconds' in body) body.promoMaxSeconds = Math.min(120, Math.max(15, Math.round(Number(body.promoMaxSeconds) || 60)));
+  const after = setSettings(db, body);
   const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup']; // these never need a re-plan
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {
@@ -203,6 +208,21 @@ app.post('/api/ads', async (req) => {
   return { added };
 });
 app.delete('/api/ads/:id', async (req) => { removeAd(db, req.params.id); await rescheduleFuture(db); return { ok: true }; });
+
+// ---------------------------------------------------------------- announcements (text-to-speech)
+app.get('/api/promo/status', () => ttsStatus());
+app.get('/api/promo/sample', async (req, reply) => {
+  const voice = VOICES[req.query.voice] ? req.query.voice : 'alan';
+  const file = await sample(voice).catch(() => null);
+  if (!file) return reply.code(503).send({ error: 'speech engine or voice not installed' });
+  return reply.header('Cache-Control', 'no-cache').type('audio/wav').send(fs.createReadStream(file));
+});
+// what the announcer is going to say next on a channel (handy for checking the script)
+app.get('/api/channels/:id/promos', (req) => {
+  const now = Date.now() / 1000;
+  return db.prepare("SELECT b.start, b.end, p.segments FROM blocks b JOIN promos p ON p.id=b.promo_id WHERE b.channel_id=? AND b.kind='promo' AND b.end>? ORDER BY b.start LIMIT 8")
+    .all(req.params.id, now).map((r) => ({ start: r.start, end: r.end, segments: JSON.parse(r.segments).map(({ label, text }) => ({ label, text })) }));
+});
 
 // ---------------------------------------------------------------- live streams
 const live = new Map();
@@ -255,6 +275,7 @@ console.log(`WBTV listening on :${cfg.port}`);
 ensureSchedule(db).catch((e) => console.error('initial schedule failed', e)); // yields between channels, never blocks the server
 setInterval(() => ensureSchedule(db).catch((e) => console.error('schedule tick failed', e)), 10 * 60 * 1000);
 processAds(db); // resume any pending ad downloads
+pruneCache(); setInterval(pruneCache, 6 * 3600 * 1000);
 
 // ---- periodic rescans (network shares don't give us file-change events, so we poll; scans are incremental)
 scan.finished = db.prepare('SELECT MAX(last_scan) AS m FROM libraries').get().m || 0;

@@ -254,14 +254,14 @@ async function openSetup() {
 }
 function renderSetup() {
   const m = $('#modal');
-  const tabs = [['libraries', 'Libraries'], ['channels', 'Channels'], ['ads', 'Ads'], ['settings', 'Settings'], ['appearance', 'Appearance']];
+  const tabs = [['libraries', 'Libraries'], ['channels', 'Channels'], ['ads', 'Ads'], ['announce', 'Announcements'], ['settings', 'Settings'], ['appearance', 'Appearance']];
   const body = h('div', { class: 'body' });
   m.replaceChildren(h('div', { class: 'dlg' },
     h('header', {}, h('img', { src: '/img/logo.png', alt: 'WBTV', style: 'height:30px;margin-right:10px' }), h('b', { style: 'margin-right:12px' }, 'Setup'),
       tabs.map(([k, l]) => h('button', { class: `tab ${k === setupTab ? 'on' : ''}`, onclick: () => { setupTab = k; renderSetup(); } }, l)),
       h('button', { class: 'x', onclick: closeModal }, 'Close ✕')), body));
   clearInterval(pollTimer);
-  ({ libraries: tabLibraries, channels: tabChannels, ads: tabAds, settings: tabSettings, appearance: tabAppearance })[setupTab](body);
+  ({ libraries: tabLibraries, channels: tabChannels, ads: tabAds, announce: tabAnnounce, settings: tabSettings, appearance: tabAppearance })[setupTab](body);
 }
 
 const LIB_TYPES = {
@@ -390,6 +390,22 @@ async function tabAds(body) {
         h('td', {}, h('button', { class: 'sm danger', onclick: async () => { await api(`/api/ads/${a.id}`, { method: 'DELETE' }); reload(); } }, '✕'))))) : h('p', { class: 'note' }, 'No ads yet.'));
   function reload() { if (setupTab === 'ads') renderSetup(); }
   if (ads.some((a) => a.status === 'pending' || a.status === 'downloading')) pollTimer = setInterval(reload, 4000);
+}
+
+async function tabAnnounce(body) {
+  const [s, st] = await Promise.all([api('/api/settings'), api('/api/promo/status')]);
+  const installed = st.voices.filter((v) => v.installed);
+  const voiceSel = h('select', { onchange: (e) => put({ promoVoice: e.target.value }) }, installed.map((v) => h('option', { value: v.id, selected: v.id === s.promoVoice }, v.label)));
+  const sampleMsg = h('span', { class: 'note' });
+  body.append(
+    st.available && installed.length ? '' : h('p', { class: 'err' }, 'The speech engine (Piper) is not installed in this container, so announcements are switched off.'),
+    boolField(s, 'promosEnabled', 'Announce what is coming up next', 'Between programmes: a clip from the next programme, with a voice reading out what is on next and after that.'),
+    h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Announcer voice'), voiceSel,
+      h('button', { onclick: () => { sampleMsg.textContent = 'Loading…'; const a = new Audio('/api/promo/sample?voice=' + voiceSel.value); a.onplaying = () => (sampleMsg.textContent = ''); a.onerror = () => (sampleMsg.textContent = 'Could not play the sample'); a.play().catch(() => {}); } }, '▶ Play sample'), sampleMsg),
+    numField(s, 'promoCount', 'Programmes to mention', 'Up next, after that, later… (1 to 4). Short gaps automatically mention fewer.', { min: 1 }),
+    boolField(s, 'promoReadPlots', 'Read out descriptions', 'Uses the plot from each NFO; falls back to the title, genre and year when there is none.'),
+    numField(s, 'promoMaxSeconds', 'Longest announcement (seconds)', 'The slot sits just before the next programme, after any ads, so programmes still start on the time grid.', { min: 15 }),
+    h('p', { class: 'note' }, 'Voices are generated locally (Piper, offline, no cost) a moment before they air and cached. Changing these re-plans everything that has not aired yet.'));
 }
 
 async function tabSettings(body) {

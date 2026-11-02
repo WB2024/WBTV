@@ -1,4 +1,6 @@
 import { tx, getSettings } from './db.js';
+import { buildPromo } from './promo.js';
+import { ttsReady } from './tts.js';
 
 /**
  * The "broadcast" schedule. It is generated ahead of time and *persisted*, so the guide
@@ -94,9 +96,21 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
   if (t == null || t < floorHist) t = Math.floor(floorHist / 300) * 300;
   if (t >= horizon) return;
 
-  const items = db.prepare('SELECT i.id, i.show_id, i.season, i.episode, i.path, i.runtime FROM items i JOIN channel_items ci ON ci.item_id=i.id WHERE ci.channel_id=? AND i.runtime>0').all(ch.id);
+  const items = db.prepare(`SELECT i.id, i.kind, i.show_id, i.season, i.episode, i.path, i.runtime, i.title, i.plot, i.year, i.genres,
+      s.title AS show_title, s.plot AS show_plot
+    FROM items i JOIN channel_items ci ON ci.item_id=i.id LEFT JOIN shows s ON s.id=i.show_id
+    WHERE ci.channel_id=? AND i.runtime>0`).all(ch.id);
   if (!items.length) return;
   const pick = makePicker(db, ch, items);
+
+  // "coming up next" announcements need to know the next few programmes, so we plan a few items ahead
+  const promoOn = settings.promosEnabled && ttsReady(settings.promoVoice);
+  const chName = db.prepare('SELECT COALESCE(name_override, auto_name) AS n FROM channels WHERE id=?').get(ch.id)?.n || 'this channel';
+  const lookahead = [];
+  const take = () => { while (lookahead.length < (promoOn ? Math.max(1, settings.promoCount) : 1)) lookahead.push(pick()); return lookahead.shift(); };
+  const insPromo = db.prepare('INSERT INTO promos(segments, est) VALUES(?,?)');
+  const insPromoBlock = db.prepare("INSERT INTO blocks(channel_id,programme_id,kind,item_id,ad_id,in_point,start,end,promo_id) VALUES(?,NULL,'promo',?,NULL,?,?,?,?)");
+  let firstOnChannel = db.prepare('SELECT 1 FROM blocks WHERE channel_id=? LIMIT 1').get(ch.id) == null;
   const insProg = db.prepare('INSERT INTO programmes(channel_id,item_id,start,end) VALUES(?,?,?,?)');
   const insBlock = db.prepare('INSERT INTO blocks(channel_id,programme_id,kind,item_id,ad_id,in_point,start,end) VALUES(?,?,?,?,?,?,?,?)');
   const useAds = ads.length > 0;
@@ -105,18 +119,39 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
 
   tx(db, () => {
     while (t < horizon) {
-      const item = pick();
+      const item = take();
       const D = item.runtime;
+      const promoOpts = { count: settings.promoCount, readPlots: settings.promoReadPlots };
 
-      // fill up to the next grid line with adverts so programmes start on the dot
+      // Between programmes: [adverts to the next grid line] then the "coming up next" slot, so the programme still starts on the dot
+      const wantPromo = promoOn && !firstOnChannel;
+      const addPromo = (p) => {
+        const pid = Number(insPromo.run(JSON.stringify(p.segments), p.est).lastInsertRowid);
+        const off = item.runtime > p.dur + 40 ? rand(0.12, 0.55) * (item.runtime - p.dur - 10) : 0; // a clip from inside the next programme
+        insPromoBlock.run(ch.id, item.id, off, t, t + p.dur, pid); t += p.dur;
+      };
       if (useAds && settings.fillGaps) {
-        const gap = Math.ceil(t / align) * align - t;
-        if (gap >= 15 && gap < align) {
+        let gap = Math.ceil(t / align) * align - t;
+        if (wantPromo) {
+          if (gap < 25) gap += align; // not enough room: use the next grid slot instead of losing the alignment
+          const promo = buildPromo(chName, [item, ...lookahead], Math.min(gap, settings.promoMaxSeconds), promoOpts);
+          const adLen = gap - (promo ? promo.dur : 0);
+          if (adLen >= 1.5) {
+            for (const { ad, len, inPoint } of fillAds(ads, adLen, true, adState)) {
+              insBlock.run(ch.id, null, 'ad', null, ad.id, inPoint, t, t + len); t += len;
+            }
+          }
+          if (promo) addPromo(promo);
+        } else if (gap >= 15 && gap < align) {
           for (const { ad, len, inPoint } of fillAds(ads, gap, true, adState)) {
             insBlock.run(ch.id, null, 'ad', null, ad.id, inPoint, t, t + len); t += len;
           }
         }
+      } else if (wantPromo) {
+        const promo = buildPromo(chName, [item, ...lookahead], settings.promoMaxSeconds, promoOpts);
+        if (promo) addPromo(promo);
       }
+      firstOnChannel = false;
 
       // split into segments with ad breaks between
       let cuts = [];
@@ -157,6 +192,7 @@ function prune(db, now) {
   const cutoff = now - 3 * 3600;
   db.prepare('DELETE FROM programmes WHERE end < ?').run(cutoff);
   db.prepare('DELETE FROM blocks WHERE end < ?').run(cutoff);
+  db.prepare('DELETE FROM promos WHERE id NOT IN (SELECT promo_id FROM blocks WHERE promo_id IS NOT NULL)').run();
 }
 
 /** Synchronous, for ONE channel (used by a broadcaster that finds a hole in its schedule). */
