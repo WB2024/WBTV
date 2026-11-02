@@ -12,6 +12,7 @@ import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './sched
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
 import { addAdUrls, processAds, removeAd } from './ads.js';
+import { hw, detectHw } from './hw.js';
 import { registerIptvOut } from './iptvout.js';
 import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
 
@@ -247,6 +248,7 @@ app.get('/api/channels/:id/now', (req) => {
 
 // ---------------------------------------------------------------- settings & ads
 app.get('/api/settings', () => getSettings(db));
+app.get('/api/hw', () => hw);
 app.put('/api/settings', async (req) => {
   const before = getSettings(db);
   const body = { ...(req.body || {}) };
@@ -255,7 +257,9 @@ app.put('/api/settings', async (req) => {
   if ('promoCount' in body) body.promoCount = Math.min(4, Math.max(1, Math.round(Number(body.promoCount) || 3)));
   if ('promoMaxSeconds' in body) body.promoMaxSeconds = Math.min(120, Math.max(15, Math.round(Number(body.promoMaxSeconds) || 60)));
   const after = setSettings(db, body);
-  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup']; // these never need a re-plan
+  if (before.hwEncoder !== after.hwEncoder) await detectHw(after.hwEncoder);
+  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder']; // these never need a re-plan
+  if ('hwEncoder' in body && !['auto', 'none', 'vaapi', 'nvenc'].includes(body.hwEncoder)) delete body.hwEncoder;
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {
     const inferKeys = ['minChannelMinutes', 'tvGenreChannelsForAll', 'movieStudioChannels', 'movieStudioMinFilms', 'movieDecadeChannels'];
@@ -339,6 +343,7 @@ fs.rmSync(path.join(cfg.tmpDir, 'live'), { recursive: true, force: true });
 await app.listen({ port: cfg.port, host: '0.0.0.0' });
 console.log(`WBTV listening on :${cfg.port}`);
 
+detectHw(getSettings(db).hwEncoder).catch((e) => console.error('hw detect failed', e));
 ensureSchedule(db).catch((e) => console.error('initial schedule failed', e)); // yields between channels, never blocks the server
 setInterval(() => ensureSchedule(db).catch((e) => console.error('schedule tick failed', e)), 10 * 60 * 1000);
 processAds(db); // resume any pending ad downloads

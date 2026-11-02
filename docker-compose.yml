@@ -13,6 +13,8 @@ services:
       # - WBTV_HEIGHT=720
       # - WBTV_CRF=23          # x264 quality (lower = better/bigger)
       # - WBTV_PRESET=veryfast # x264 speed preset
+    # devices:                            # optional: GPU encoding (Intel/AMD VAAPI), see README
+    #   - /dev/dri:/dev/dri
     volumes:
       - /opt/wbtv:/config                  # database + downloaded ads
       - /mnt/Main20TB:/mnt/Main20TB:ro    # media root (same path as on the host)

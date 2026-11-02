@@ -141,6 +141,15 @@ WBTV can act as a TV tuner, so every channel (with its ads and announcements) sh
 
 The HDHomeRun emulation serves a normal MPEG-TS stream without re-encoding, so it costs almost no extra CPU on top of the shared channel stream.
 
+## Hardware encoding (optional)
+
+By default WBTV encodes on the CPU (x264). If the server has a GPU you can hand the encode to it, which frees the CPU for more channels at once. Settings > Video encoding is **Automatic** by default: WBTV runs a real test encode and silently falls back to the CPU if the GPU is not usable, and the Settings page tells you which one is in use.
+
+- **Intel / AMD (VAAPI):** pass the GPU in: add `devices: ["/dev/dri:/dev/dri"]` to the compose service (on Proxmox LXC, pass the `/dev/dri/renderD128` device through to the container first).
+- **NVIDIA (NVENC):** install the NVIDIA container toolkit and add `runtime: nvidia` with `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=video,compute,utility`.
+
+Scaling and on-screen captions still run on the CPU; only the H.264 encode moves.
+
 ## Themes
 
 <p align="center">

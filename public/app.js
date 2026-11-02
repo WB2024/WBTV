@@ -545,7 +545,7 @@ async function tabAnnounce(body) {
 }
 
 async function tabSettings(body) {
-  const [s, sc] = await Promise.all([api('/api/settings'), api('/api/scan')]);
+  const [s, sc, hwi] = await Promise.all([api('/api/settings'), api('/api/scan'), api('/api/hw')]);
   const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 120 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
   const lastScan = sc.finished ? `Last scan ${ago(sc.finished)}` : 'Not scanned yet';
   const next = sc.nextAuto ? ` · next automatic scan ${sc.nextAuto <= Date.now() ? 'any moment' : 'in ' + Math.max(1, Math.round((sc.nextAuto - Date.now()) / 60000)) + ' min'}` : '';
@@ -556,6 +556,11 @@ async function tabSettings(body) {
     boolField(s, 'scanOnStartup', 'Scan when WBTV starts', ''),
     numField(s, 'pauseBufferMinutes', 'Pause / rewind buffer (minutes)', 'How far back you can pause or rewind live TV (0 = off, max 30). Kept in RAM on the server (about 20 MB per minute per watched channel).', { min: 0 }),
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/scan', { method: 'POST', body: {} }); setTimeout(renderSetup, 800); } }, 'Scan now'), h('span', { class: 'note' }, lastScan + next + (sc.running ? ' · scanning…' : ''))),
+    h('h3', {}, 'Video encoding'),
+    h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Hardware encoding'),
+      h('select', { onchange: async (e) => { await put({ hwEncoder: e.target.value }); renderSetup(); } },
+        [['auto', 'Automatic'], ['none', 'Off (CPU only)'], ['vaapi', 'Intel / AMD GPU (VAAPI)'], ['nvenc', 'NVIDIA (NVENC)']].map(([v, l]) => h('option', { value: v, selected: v === s.hwEncoder }, l)))),
+    h('p', { class: 'note' }, 'Now: ' + hwi.note + ' Hardware encoding needs the GPU passed into the container (see the README). WBTV tests it first and falls back to the CPU if it does not work. Applies from the next programme.'),
     h('h3', {}, 'Channel building'),
     numField(s, 'minChannelMinutes', 'Minimum channel size (minutes)', 'A studio/genre needs this much content to get its own channel. Lower = more channels. 0 = every studio.'),
     boolField(s, 'tvGenreChannelsForAll', 'Genre channels for every TV show', 'By default only shows with no (big enough) studio go on genre channels. Turn on to put every show on its genre channels too.'),

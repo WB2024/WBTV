@@ -1,7 +1,7 @@
 FROM node:24-trixie-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl fonts-dejavu-core \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl fonts-dejavu-core intel-media-va-driver i965-va-driver mesa-va-drivers vainfo \
  && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
  && chmod +x /usr/local/bin/yt-dlp \
  && rm -rf /var/lib/apt/lists/*

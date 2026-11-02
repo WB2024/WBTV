@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { videoCodec, videoTail, globalArgs } from './hw.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { cfg } from './config.js';
@@ -211,7 +212,7 @@ export class Broadcaster {
           `,drawtext=fontfile=${cfg.fontFile}:textfile=${tf}:x=w*0.045:y=h*0.855:fontsize=${f2}:fontcolor=white:${en}`;
       });
     }
-    v += '[v]';
+    v += e.tail + '[v]';
 
     // sound: preview clip quietly underneath, announcer on top
     const fmt = 'aresample=48000,aformat=channel_layouts=stereo';
@@ -242,9 +243,8 @@ export class Broadcaster {
     const { width: W, height: H } = cfg;
     return {
       vf: `yadif=0:-1:1,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,format=yuv420p`,
-      codec: ['-c:v', 'libx264', '-preset', cfg.preset, '-crf', String(cfg.crf), '-maxrate', '5M', '-bufsize', '10M', '-profile:v', 'main',
-        '-g', '100', '-keyint_min', '100', '-sc_threshold', '0', '-force_key_frames', `expr:gte(t,n_forced*${SEG_SECONDS})`,
-        '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2'],
+      tail: videoTail(),
+      codec: [...videoCodec(SEG_SECONDS), '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2'],
     };
   }
 
@@ -273,7 +273,7 @@ export class Broadcaster {
       '-ss', offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', file];
     if (!hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
     args.push('-t', dur.toFixed(3), '-map', '0:v:0', '-map', hasAudio ? '0:a:0' : '1:a:0',
-      '-vf', vf, '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
+      '-vf', vf + e.tail, '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
     return this.runFfmpeg(args);
   }
 
@@ -289,7 +289,7 @@ export class Broadcaster {
       `[w]volume=3,alimiter=limit=0.95,showwaves=s=${W}x${wh}:mode=cline:colors=cyan:rate=25:scale=sqrt:draw=full,format=yuv420p[wv];[1:v]format=yuv420p[bg];[bg][wv]overlay=0:${H - wh - Math.round(H * 0.04)}[b1];`;
     f += hasArt ? `[2:v]scale=-2:${artH},format=yuv420p[art];[b1][art]overlay=${Math.round(W * 0.06)}:${Math.round(H * 0.14)}[b2];` : '[b1]null[b2];';
     f += `[b2]${dt(files.l, Math.round(H * 0.16), Math.round(H * 0.04), '0xffd400')},${dt(files.t, Math.round(H * 0.23), Math.round(H * 0.07), 'white')},` +
-      `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')},format=yuv420p[v]`;
+      `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')},format=yuv420p${videoTail()}[v]`;
     return f;
   }
 
@@ -330,7 +330,7 @@ export class Broadcaster {
     args.push('-i', url);
     if (info.hasVideo) {
       if (!info.hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-shortest');
-      args.push('-map', '0:v:0', '-map', info.hasAudio ? '0:a:0' : '1:a:0', '-vf', e.vf, '-af', 'aresample=48000:async=1,aformat=channel_layouts=stereo', ...e.codec);
+      args.push('-map', '0:v:0', '-map', info.hasAudio ? '0:a:0' : '1:a:0', '-vf', e.vf + e.tail, '-af', 'aresample=48000:async=1,aformat=channel_layouts=stereo', ...e.codec);
     } else {
       // live radio station: draw a picture with the station name
       args.push('-f', 'lavfi', '-i', `color=c=0x0a1030:s=${cfg.width}x${cfg.height}:r=25`);
@@ -345,7 +345,7 @@ export class Broadcaster {
     return this.runFfmpeg(['-hide_banner', '-loglevel', 'error', '-nostdin',
       '-re', '-f', 'lavfi', '-i', `smptebars=size=${W}x${H}:rate=25`,
       '-re', '-f', 'lavfi', '-i', 'sine=frequency=1000:sample_rate=48000,volume=0.04',
-      '-t', dur.toFixed(2), '-map', '0:v', '-map', '1:a', '-vf', 'format=yuv420p', ...e.codec]);
+      '-t', dur.toFixed(2), '-map', '0:v', '-map', '1:a', '-vf', 'format=yuv420p' + e.tail, ...e.codec]);
   }
 
   runFfmpeg(inputArgs) {
@@ -353,7 +353,7 @@ export class Broadcaster {
       const no = ++this.runNo;
       const run = { no, playlist: path.join(this.dir, `r${no}.m3u8`), count: 0, produced: 0, ended: false };
       this.runs.push(run);
-      const args = [...inputArgs, '-output_ts_offset', this.streamTime.toFixed(3),
+      const args = [...globalArgs(), ...inputArgs, '-output_ts_offset', this.streamTime.toFixed(3),
         '-f', 'hls', '-hls_time', String(SEG_SECONDS), '-hls_list_size', '0', '-hls_flags', 'independent_segments',
         '-hls_segment_filename', path.join(this.dir, `r${no}_%05d.ts`), run.playlist];
       const p = spawn(cfg.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
