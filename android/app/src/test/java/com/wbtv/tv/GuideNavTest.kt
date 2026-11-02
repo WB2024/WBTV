@@ -1,7 +1,9 @@
 package com.wbtv.tv
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GuideNavTest {
@@ -49,5 +51,34 @@ class GuideNavTest {
         assertEquals(150.0, GuideNav.scrollTo(100.0, 300.0, p(1, 380, 450)), 0.0) // off the right
         assertEquals(100.0, GuideNav.scrollTo(100.0, 300.0, p(1, 150, 250)), 0.0) // already visible
         assertEquals(380.0, GuideNav.scrollTo(100.0, 300.0, p(1, 380, 900)), 0.0) // longer than window
+    }
+
+    // ---- between programmes (adverts / announcement slot): nothing "airs now" but the channel is still on air ----
+
+    // channel 1 has a break between 200 and 230
+    private val gapEpg = mapOf(1 to listOf(p(10, 0, 100), p(11, 100, 200), p(12, 230, 330)))
+    private val gapNav = GuideNav(ch.take(1), gapEpg)
+
+    @Test fun inAGapTheGuideLandsOnTheNextProgrammeNotTheOldestOne() {
+        // regression: it used to select the first (long past) programme in the row
+        assertEquals(12, gapNav.atNow(0, 215.0).prog?.id)
+    }
+
+    @Test fun aChannelInAGapCanStillBeTuned() {
+        // regression: OK did nothing unless the selected programme was airing right now
+        val s = gapNav.atNow(0, 215.0)
+        assertTrue(gapNav.tunable(0, s.prog, 215.0))
+        assertTrue(gapNav.tunable(0, gapEpg[1]!![0], 215.0)) // even a past programme in the row
+    }
+
+    @Test fun duringAProgrammeOnlyTheLiveOneIsTunable() {
+        val now = 150.0
+        assertTrue(gapNav.tunable(0, gapEpg[1]!![1], now))   // live
+        assertFalse(gapNav.tunable(0, gapEpg[1]!![2], now))  // a future one just shows its info
+        assertFalse(gapNav.tunable(0, gapEpg[1]!![0], now))  // a past one too
+    }
+
+    @Test fun afterTheLastProgrammeFallsBackToTheLastOne() {
+        assertEquals(12, gapNav.atNow(0, 999.0).prog?.id)
     }
 }

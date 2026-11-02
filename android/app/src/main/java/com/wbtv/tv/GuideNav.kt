@@ -15,11 +15,21 @@ class GuideNav(private val channels: List<Channel>, private val programmes: Map<
 
     fun current(ch: Int, now: Double): Programme? = list(ch).firstOrNull { it.airsAt(now) }
 
-    /** Row `ch`, highlighting what is on right now (or the first thing listed). */
+    /**
+     * Row `ch`, highlighting what is on right now. Between programmes (adverts / the "coming up next" slot)
+     * nothing "airs now", so we land on the next programme instead of the oldest one in the row.
+     */
     fun atNow(ch: Int, now: Double): Sel {
         val c = ch.coerceIn(0, (channels.size - 1).coerceAtLeast(0))
-        return Sel(c, current(c, now) ?: list(c).firstOrNull())
+        val l = list(c)
+        return Sel(c, current(c, now) ?: l.firstOrNull { it.start > now } ?: l.lastOrNull())
     }
+
+    /**
+     * Can OK tune this channel? A channel is always "on air": if the programme is live, yes; and if the channel is
+     * currently between programmes (showing adverts or an announcement) then any programme in its row tunes it.
+     */
+    fun tunable(ch: Int, p: Programme?, now: Double): Boolean = p == null || p.airsAt(now) || current(ch, now) == null
 
     fun left(s: Sel): Sel = step(s, -1)
     fun right(s: Sel): Sel = step(s, 1)

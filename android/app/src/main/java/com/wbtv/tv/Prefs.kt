@@ -18,6 +18,10 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("autoFullscreen", true)
         set(v) = sp.edit { putBoolean("autoFullscreen", v) }
 
+    var filter: String
+        get() = sp.getString("filter", "all") ?: "all"
+        set(v) = sp.edit { putString("filter", v) }
+
     var lastChannel: Int
         get() = sp.getInt("lastChannel", -1)
         set(v) = sp.edit { putInt("lastChannel", v) }

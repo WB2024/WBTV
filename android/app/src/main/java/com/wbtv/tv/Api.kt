@@ -3,6 +3,10 @@ package com.wbtv.tv
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -12,21 +16,47 @@ class Api(rawBase: String) {
 
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
-    private suspend fun get(path: String): String = withContext(Dispatchers.IO) {
+    private suspend fun request(method: String, path: String, body: String? = null): String = withContext(Dispatchers.IO) {
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
+            c.requestMethod = method
             c.connectTimeout = 5000
             c.readTimeout = 20000
+            if (body != null) {
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write(body.toByteArray()) }
+            }
             if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
             c.inputStream.bufferedReader().use { it.readText() }
         } finally { c.disconnect() }
     }
+
+    private suspend fun get(path: String) = request("GET", path)
 
     suspend fun channels(): List<Channel> = json.decodeFromString(get("/api/channels"))
 
     suspend fun epg(from: Long, to: Long): EpgResponse = json.decodeFromString(get("/api/epg?from=$from&to=$to"))
 
     suspend fun item(id: Int): ItemDetail = json.decodeFromString(get("/api/items/$id"))
+
+    // ---- server settings (ads, announcements, rescans, pause buffer...) ----
+    suspend fun settings(): JsonObject = json.parseToJsonElement(get("/api/settings")).jsonObject
+
+    suspend fun putSettings(patch: Map<String, Any>): JsonObject {
+        val body = buildJsonObject {
+            for ((k, v) in patch) when (v) {
+                is Boolean -> put(k, v)
+                is Number -> put(k, v)
+                else -> put(k, v.toString())
+            }
+        }
+        return json.parseToJsonElement(request("PUT", "/api/settings", body.toString())).jsonObject
+    }
+
+    suspend fun scanNow() { request("POST", "/api/scan", "{}") }
+
+    suspend fun scanStatus(): JsonObject = json.parseToJsonElement(get("/api/scan")).jsonObject
 
     fun liveUrl(channelId: Int, viewer: String) = "$base/live/$channelId/index.m3u8?v=$viewer"
 

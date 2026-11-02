@@ -8,6 +8,7 @@ data class Channel(
     val name: String,
     val number: Int? = null,
     val kind: String = "tv",
+    val key: String = "",
 )
 
 @Serializable

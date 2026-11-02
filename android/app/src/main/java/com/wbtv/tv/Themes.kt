@@ -11,6 +11,9 @@ data class WbtvTheme(
     val txt: Color, val dim: Color, val accent: Color, val head: Color,
     val chan1: Color, val chan2: Color, val play1: Color, val play2: Color,
     val now: Color, val panel: Color,
+    val rulerTxt: Color = Color.Unspecified, // text colour on the time ruler (defaults to dim)
+    val flat: Boolean = false,               // square boxes with gaps, highlighted channel row
+    val previewRight: Boolean = false,       // preview on the right, with a title strip on top
 )
 
 private fun c(hex: Long) = Color(0xFF000000 or hex)
@@ -34,6 +37,14 @@ val Themes = listOf(
     WbtvTheme("teletext", "Teletext", c(0x000000), c(0x000000), c(0x000000), c(0xFFFFFF), c(0x0000C8), c(0x0000C8), c(0x000000),
         c(0xFFFF00), c(0x000000), c(0x00FFFF), c(0xFFFFFF), c(0x00FFFF), c(0x00FF00), c(0x000000),
         c(0x000000), c(0x000000), c(0x008000), c(0x008000), c(0xFF0000), c(0x000000)),
+    WbtvTheme("satellite", "Satellite (classic)", c(0xC4D8F2), c(0x202A85), c(0x141C66), c(0xFFFFFF), c(0x1C3DB3), c(0x1C3DB3), c(0x14267A),
+        c(0xFFD90F), c(0x000000), c(0xFFFFFF), c(0xFFFFFF), c(0xC9D7FB), c(0xFFD90F), c(0xD9E6F9),
+        c(0x1C3DB3), c(0x1C3DB3), c(0x12A150), c(0x12A150), c(0xE8262A), c(0x141C66),
+        rulerTxt = c(0x1B2478), flat = true, previewRight = true),
+    WbtvTheme("satellite-hd", "Satellite HD", c(0x0C2C70), c(0x143F96), c(0x0C2C70), c(0xCFE2FF), c(0x3D84D8), c(0x2A63B6), c(0x17428C),
+        c(0xFFD84A), c(0x101A40), c(0xFFFFFF), c(0xFFFFFF), c(0xB8D0F5), c(0xFFD84A), c(0x0A2158),
+        c(0x1F5FBD), c(0x1A4FA0), c(0x2AA05A), c(0x1D7A43), c(0xFF5A4D), c(0x0F326F),
+        flat = true, previewRight = true),
     WbtvTheme("synthwave", "Synthwave", c(0x0B021D), c(0x34095F), c(0x0B021D), c(0xFF2A6D), c(0x3A1A7A), c(0x24104F), c(0x150A33),
         c(0xFF2A6D), c(0xFFFFFF), c(0x05D9E8), c(0xF3E9FF), c(0xA98FE0), c(0x05D9E8), c(0x1A0B42),
         c(0x4B1A99), c(0x2D0F66), c(0x0A8F6A), c(0x07684E), c(0x05D9E8), c(0x1A0B42)),
