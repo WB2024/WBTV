@@ -129,6 +129,18 @@ Use the **filter chips** above the guide (or `[` and `]`) to show only TV channe
 
 **Web keys:** arrows to browse, Enter to watch, 0-9 for a channel number, Space to pause, Left/Right to rewind or skip in fullscreen, L to go back to live, F for fullscreen, G or Esc for the guide.
 
+## Use WBTV in Plex, Jellyfin, TiviMate and other players
+
+WBTV can act as a TV tuner, so every channel (with its ads and announcements) shows up in the apps you already use.
+
+| You want to use | Add this |
+|---|---|
+| **Plex / Jellyfin / Emby Live TV** | Add an *HDHomeRun* tuner at `http://<server>:8420`, then use the XMLTV guide below |
+| **TiviMate, VLC, Kodi, Channels, any IPTV app** | Playlist: `http://<server>:8420/iptv/playlist.m3u` |
+| **Guide data (XMLTV)** | `http://<server>:8420/iptv/epg.xml` (36 hours ahead) |
+
+The HDHomeRun emulation serves a normal MPEG-TS stream without re-encoding, so it costs almost no extra CPU on top of the shared channel stream.
+
 ## Themes
 
 <p align="center">

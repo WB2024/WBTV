@@ -12,6 +12,7 @@ import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './sched
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
 import { addAdUrls, processAds, removeAd } from './ads.js';
+import { registerIptvOut } from './iptvout.js';
 import { ttsStatus, sample, pruneCache, VOICES } from './tts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -325,6 +326,8 @@ app.get('/live/:id/:seg', async (req, reply) => {
 });
 
 app.post('/live/:id/stop', async (req) => { live.get(Number(req.params.id))?.leave(req.query.v || req.body?.v); return { ok: true }; });
+
+registerIptvOut(app, db, broadcaster);
 
 // ---------------------------------------------------------------- static
 app.register(fastifyStatic, { root: path.join(root, 'public'), prefix: '/' });
