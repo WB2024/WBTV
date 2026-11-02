@@ -11,7 +11,7 @@ export const hw = { requested: 'auto', active: 'software', note: 'not checked ye
 
 const KEYFRAMES = ['-force_key_frames', 'expr:gte(t,n_forced*4)'];
 
-export function videoCodec(seg) {
+export function videoCodec(seg, preset = cfg.preset) {
   switch (hw.active) {
     case 'vaapi':
       return ['-c:v', 'h264_vaapi', '-b:v', '3500k', '-maxrate', '5M', '-bufsize', '10M', '-profile:v', 'main', '-g', '100', ...KEYFRAMES];
@@ -19,7 +19,7 @@ export function videoCodec(seg) {
       return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', String(cfg.crf + 1), '-b:v', '0', '-maxrate', '5M', '-bufsize', '10M',
         '-profile:v', 'main', '-g', '100', '-forced-idr', '1', ...KEYFRAMES];
     default:
-      return ['-c:v', 'libx264', '-preset', cfg.preset, '-crf', String(cfg.crf), '-maxrate', '5M', '-bufsize', '10M', '-profile:v', 'main',
+      return ['-c:v', 'libx264', '-preset', preset, '-crf', String(cfg.crf), '-maxrate', '5M', '-bufsize', '10M', '-profile:v', 'main',
         '-g', '100', '-keyint_min', '100', '-sc_threshold', '0', '-force_key_frames', `expr:gte(t,n_forced*${seg})`];
   }
 }

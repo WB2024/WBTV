@@ -7,11 +7,19 @@ import { probe } from './media.js';
 import { REEL } from './scheduler.js';
 import { getSettings } from './db.js';
 import { logoFile } from './logos.js';
-import { prepare as prepareNarration } from './tts.js';
+import { prepare as prepareNarration, cached as cachedNarration } from './tts.js';
 import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
 const SEG_SECONDS = 4;
+const probeMemo = new Map(); // file -> { at, info }: remembering what a file contains saves a slow network-share round trip on every tune-in
+async function probeFile(file) {
+  const hit = probeMemo.get(file);
+  if (hit && Date.now() - hit.at < 3600 * 1000) return hit.info;
+  const info = await probe(file);
+  if (info) { probeMemo.set(file, { at: Date.now(), info }); if (probeMemo.size > 2000) probeMemo.delete(probeMemo.keys().next().value); }
+  return info;
+}
 const firstOf = (json) => { try { return JSON.parse(json || '[]')[0] || ''; } catch { return ''; } };
 const LEAD = 10;        // seconds of video we keep buffered ahead of the wall clock
 const WINDOW = 6;       // segments advertised in the live playlist
@@ -32,9 +40,21 @@ export class Broadcaster {
     this.streamTime = 0; this.stopped = false;
     this.viewers = new Map();
     this.startedAt = Date.now();
+    this.marks = {}; this.firstKind = '';
     // the live playlist advertises this many segments; the more, the further back viewers can pause/rewind
     const mins = Number(getSettings(db).pauseBufferMinutes) || 0;
     this.windowSegs = Math.max(WINDOW, Math.round((mins * 60) / SEG_SECONDS));
+  }
+
+  /** Cold-start timing: logs one line the first time the channel has 3 segments, so slow tune-ins can be explained. */
+  mark(name) {
+    if (name in this.marks) return;
+    this.marks[name] = Date.now() - this.startedAt;
+    if (name === 'seg3') {
+      const m = this.marks, f = (k) => (k in m ? (m[k] / 1000).toFixed(1) + 's' : '-');
+      const slow = m.seg3 > 6000;
+      if (slow || process.env.WBTV_DEBUG) console.log(`[ch${this.id}] tune-in ${f('seg3')}${slow ? ' (slow)' : ''}: schedule ${f('block')}, file probe ${f('probe')}, ffmpeg start ${f('spawn')}, 1st segment ${f('seg1')} [${this.firstKind}]`);
+    }
   }
 
   start() {
@@ -76,6 +96,7 @@ export class Broadcaster {
         const m = lines[i].match(/^#EXTINF:([\d.]+)/);
         if (m && /\.ts\s*$/.test(lines[i + 1])) found.push({ dur: parseFloat(m[1]), file: lines[i + 1].trim() });
       }
+      if (found.length && !this.segs.length) this.mark('seg1');
       for (let k = r.count; k < found.length; k++) {
         const disc = k === 0 && this.gCounter > 0;
         this.segs.push({ g: this.gCounter++, ...found[k], disc, discBefore: this.discCounter });
@@ -84,6 +105,7 @@ export class Broadcaster {
       }
       r.count = found.length;
     }
+    if (this.segs.length >= 3) this.mark('seg3');
     this.runs = this.runs.filter((r) => !(r.ended && r.synced));
     for (const r of this.runs) if (r.ended) r.synced = true;
     // drop old segments (and their files)
@@ -117,6 +139,8 @@ export class Broadcaster {
       const wall = Date.now() / 1000;
       let block = getBlockAt(this.db, this.id, cursor);
       if (!block) { try { ensureChannelSchedule(this.db, this.id); } catch { /* ignore */ } block = getBlockAt(this.db, this.id, cursor); }
+      this.mark('block');
+      if (!this.firstKind) this.firstKind = block ? block.kind : 'hole';
 
       let dur, produced = 0, ok = false;
       const burst = Math.max(1, LEAD - (cursor - wall));
@@ -147,7 +171,8 @@ export class Broadcaster {
         plan = null;
       }
       if (plan && plan.file) {
-        const info = await probe(plan.file);
+        const info = await probeFile(plan.file);
+        this.mark('probe');
         if (info && !this.stopped) {
           produced = plan.promo
             ? await this.runPromo(plan, dur, info.hasAudio, burst)
@@ -194,8 +219,19 @@ export class Broadcaster {
     const promo = this.db.prepare('SELECT * FROM promos WHERE id=?').get(b.promo_id);
     const segments = promo ? JSON.parse(promo.segments) : [];
     let narr = null;
-    try { if (segments.length) narr = await prepareNarration(promo.id, segments, getSettings(this.db).promoVoice); }
-    catch (e) { console.error(`[ch${this.id}] narration failed: ${e.message}`); }
+    try {
+      if (segments.length) {
+        const voice = getSettings(this.db).promoVoice;
+        narr = cachedNarration(segments, voice);
+        if (!narr) {
+          // never keep a viewer waiting for the voice to be synthesised: give a nearly finished one a moment, else play the slot without it
+          const job = prepareNarration(promo.id, segments, voice);
+          job.catch(() => {});
+          // tuning in (nothing produced yet): do not wait at all; otherwise a nearly finished voice-over gets a moment
+          narr = await Promise.race([job, new Promise((r) => setTimeout(() => r(null), this.segs.length ? 1500 : 0))]);
+        }
+      }
+    } catch (e) { console.error(`[ch${this.id}] narration failed: ${e.message}`); }
 
     const e = this.encodeArgs();
     const el = Math.max(0, plan.elapsed); // joined part-way through the slot: skip into the voice-over and captions too
@@ -254,7 +290,7 @@ export class Broadcaster {
     return {
       vf: `yadif=0:-1:1,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,format=yuv420p`,
       tail: videoTail(),
-      codec: [...videoCodec(SEG_SECONDS), '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2'],
+      codec: [...videoCodec(SEG_SECONDS, this.runNo === 0 ? 'superfast' : cfg.preset), '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2'],
     };
   }
 
@@ -431,6 +467,7 @@ export class Broadcaster {
         '-hls_segment_filename', path.join(this.dir, `r${no}_%05d.ts`), run.playlist];
       const p = spawn(cfg.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
       this.proc = p;
+      this.mark('spawn');
       let err = '';
       p.stderr.on('data', (d) => (err = (err + d).slice(-1500)));
       p.on('error', (e) => { err += String(e); });

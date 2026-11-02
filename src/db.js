@@ -110,6 +110,7 @@ const DEFAULTS = {
   signOffEnabled: false,   // "closedown": a test card overnight, like old TV
   signOffFrom: '03:00',
   signOffTo: '05:00',
+  streamHeight: Number(process.env.WBTV_HEIGHT || 720), // 480 | 576 | 720: lower = much less CPU per stream
   hwEncoder: 'auto',       // auto | none | vaapi | nvenc (verified with a test encode, falls back to the CPU)
   pauseBufferMinutes: 10,  // how far back you can rewind / how long you can pause live TV (0 = off)
   autoScan: true,          // rescan libraries periodically

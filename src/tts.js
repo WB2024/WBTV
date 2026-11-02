@@ -60,6 +60,17 @@ async function synth(text, voice) {
 }
 
 const inflight = new Map();
+const narrationKey = (segments, voice) => crypto.createHash('sha1').update(`${voice}|${JSON.stringify(segments.map((s) => s.text))}`).digest('hex');
+
+/** The narration if it has already been generated (no synthesis, returns immediately); otherwise null. */
+export function cached(segments, voice) {
+  try {
+    const meta = path.join(cacheDir(), `p_${narrationKey(segments, voice)}.json`);
+    if (!fs.existsSync(meta)) return null;
+    const m = JSON.parse(fs.readFileSync(meta, 'utf8'));
+    return fs.existsSync(m.file) ? m : null;
+  } catch { return null; }
+}
 
 /**
  * Narration for one announcement -> { file, dur, cues:[{label,title,start,end}] } (cues are seconds from the start).
@@ -67,7 +78,7 @@ const inflight = new Map();
  */
 export function prepare(promoId, segments, voice) {
   if (!ttsReady(voice)) return Promise.resolve(null);
-  const key = crypto.createHash('sha1').update(`${voice}|${JSON.stringify(segments.map((s) => s.text))}`).digest('hex');
+  const key = narrationKey(segments, voice);
   if (inflight.has(key)) return inflight.get(key);
   const job = (async () => {
     fs.mkdirSync(cacheDir(), { recursive: true });

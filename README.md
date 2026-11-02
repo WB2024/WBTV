@@ -153,6 +153,16 @@ The HDHomeRun emulation serves a normal MPEG-TS stream without re-encoding, so i
 
 WBTV is built for a home network and has no login by default. If you open it to the internet (or just want a lock on it), turn on a password in **Setup > Settings > Security**. Browsers log in once; the Android TV app, IPTV players and Plex/Jellyfin use an **access key** shown on the same page (the Android app has a field for it). Don't expose any self-hosted app to the internet over plain http; put it behind HTTPS (a reverse proxy such as Caddy or Nginx Proxy Manager). The full API is documented in [docs/API.md](docs/API.md).
 
+## If channels are slow to start
+
+Every channel you watch is encoded live, so start-up time depends on how busy the server's CPU is. If the machine also runs other apps, try these in **Setup > Settings > Video encoding**:
+
+- **Stream size:** 576p uses roughly 30% less CPU per channel than 720p (measured on a 1080p source); 480p is the lightest.
+- **Hardware encoding:** see below, if the server has a GPU.
+- Fewer simultaneous viewers: each channel being watched is its own encoder, and a channel stops about 25 seconds after its last viewer leaves.
+
+WBTV logs a line such as `tune-in 7.4s (slow): ... ` whenever a channel takes more than 6 seconds to start, with a breakdown of where the time went (`docker logs wbtv`). Set `WBTV_DEBUG=1` to log every start.
+
 ## Hardware encoding (optional)
 
 By default WBTV encodes on the CPU (x264). If the server has a GPU you can hand the encode to it, which frees the CPU for more channels at once. Settings > Video encoding is **Automatic** by default: WBTV runs a real test encode and silently falls back to the CPU if the GPU is not usable, and the Settings page tells you which one is in use.

@@ -22,6 +22,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = openDb(cfg.configDir);
 const app = Fastify({ logger: { level: 'warn' } });
 const { getToken } = initAuth(app, db);
+/** Stream picture size: a lower one costs much less CPU per channel. Applies to streams as they start. */
+function applyStreamSize(h) {
+  cfg.height = [480, 576, 720].includes(Number(h)) ? Number(h) : 720;
+  cfg.width = Math.round((cfg.height * 16) / 9 / 2) * 2;
+}
+applyStreamSize(getSettings(db).streamHeight);
 app.addContentTypeParser(['image/png', 'image/jpeg', 'image/webp'], { parseAs: 'buffer', bodyLimit: 2 * 1024 * 1024 }, (req, body, done) => done(null, body));
 
 // ---------------------------------------------------------------- scanning
@@ -278,13 +284,17 @@ app.put('/api/settings', async (req) => {
   const before = getSettings(db);
   const body = { ...(req.body || {}) };
   if ('promoVoice' in body && !VOICES[body.promoVoice]) delete body.promoVoice;
+  if ('streamHeight' in body && ![480, 576, 720].includes(Number(body.streamHeight))) delete body.streamHeight;
+  if ('hwEncoder' in body && !['auto', 'none', 'vaapi', 'nvenc'].includes(body.hwEncoder)) delete body.hwEncoder;
+  if ('signOffFrom' in body && !/^\d{1,2}:\d{2}$/.test(String(body.signOffFrom))) delete body.signOffFrom;
+  if ('signOffTo' in body && !/^\d{1,2}:\d{2}$/.test(String(body.signOffTo))) delete body.signOffTo;
   if ('pauseBufferMinutes' in body) body.pauseBufferMinutes = Math.min(30, Math.max(0, Math.round(Number(body.pauseBufferMinutes) || 0)));
   if ('promoCount' in body) body.promoCount = Math.min(4, Math.max(1, Math.round(Number(body.promoCount) || 3)));
   if ('promoMaxSeconds' in body) body.promoMaxSeconds = Math.min(120, Math.max(15, Math.round(Number(body.promoMaxSeconds) || 60)));
   const after = setSettings(db, body);
   if (before.hwEncoder !== after.hwEncoder) await detectHw(after.hwEncoder);
-  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug']; // these never need a re-plan
-  if ('hwEncoder' in body && !['auto', 'none', 'vaapi', 'nvenc'].includes(body.hwEncoder)) delete body.hwEncoder;
+  if (before.streamHeight !== after.streamHeight) applyStreamSize(after.streamHeight);
+  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'streamHeight']; // these never need a re-plan
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {
     const inferKeys = ['minChannelMinutes', 'tvGenreChannelsForAll', 'movieStudioChannels', 'movieStudioMinFilms', 'movieDecadeChannels'];
@@ -337,7 +347,7 @@ app.get('/live/:id/index.m3u8', async (req, reply) => {
   const b = broadcaster(id);
   b.touch(req.query.v);
   const t0 = Date.now();
-  while ((b.ready < 3 && Date.now() - t0 < 9000) || (b.ready < 1 && Date.now() - t0 < 25000)) {
+  while ((b.ready < 2 && Date.now() - t0 < 9000) || (b.ready < 1 && Date.now() - t0 < 25000)) {
     await new Promise((r) => setTimeout(r, 150));
     if (b.stopped) break;
   }

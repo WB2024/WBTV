@@ -433,6 +433,27 @@ private fun SettingsScreen(vm: AppVm, t: WbtvTheme, u: Float) {
                         }
                         TvButton("Scan library now", false, t, u) { vm.scanNow() }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp * u)) {
+                        val bug = vm.serverBool("channelBug")
+                        TvButton("Channel logo:  ${onOff(bug)}", bug == true, t, u) { vm.setServerSetting("channelBug", bug != true) }
+                        val idents = vm.serverBool("identsEnabled")
+                        TvButton("Station idents:  ${onOff(idents)}", idents == true, t, u) { vm.setServerSetting("identsEnabled", idents != true) }
+                        val off = vm.serverBool("signOffEnabled")
+                        TvButton("Closedown overnight:  ${onOff(off)}", off == true, t, u) { vm.setServerSetting("signOffEnabled", off != true) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp * u)) {
+                        val day = vm.serverBool("autoDaypart")
+                        TvButton("Schedule by time of day:  ${onOff(day)}", day == true, t, u) { vm.setServerSetting("autoDaypart", day != true) }
+                        val era = vm.serverBool("eraAds")
+                        TvButton("Match ads to the era:  ${onOff(era)}", era == true, t, u) { vm.setServerSetting("eraAds", era != true) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp * u), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Stream size:", color = t.dim, fontSize = (13 * u).sp)
+                        val size = vm.serverInt("streamHeight")
+                        for ((label, h) in listOf("720p" to 720, "576p (lighter)" to 576, "480p (lightest)" to 480)) {
+                            TvButton(label, size == h, t, u) { vm.setServerSetting("streamHeight", h) }
+                        }
+                    }
                     vm.settingsNote?.let { Text(it, color = t.accent, fontSize = (12 * u).sp) }
                 }
             }
