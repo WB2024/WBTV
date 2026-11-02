@@ -220,6 +220,8 @@ const num = (s) => { const n = parseInt(String(s || '').split('/')[0], 10); retu
  * the show or book is the album, the host or author is the artist, and the track number keeps chapters in order.
  */
 async function scanRadio(db, lib, progress) {
+  // self-heal: an earlier parser took the track number of "14 - Artist. Title" for the artist; re-read those few rows
+  db.prepare("UPDATE items SET mtime=0 WHERE library_id=? AND kind='track' AND artist GLOB '[0-9]*' AND artist NOT GLOB '*[^0-9]*'").run(lib.id);
   const talk = TALK[lib.type] || null;
   const kind = talk ? 'talk' : 'track';
   const existing = new Map(db.prepare('SELECT path,mtime,size FROM items WHERE library_id=?').all(lib.id).map((r) => [r.path, r]));
@@ -258,7 +260,7 @@ async function scanRadio(db, lib, progress) {
       if (!talk) {
         batch.push([lib.id, kind, full, t.title || (m ? m[2].trim() : base.replace(/^\d+[\s.-]+/, '')), Number.isFinite(year) ? year : null, info.duration,
           j(t.genre ? t.genre.split(/[;/]/).map((g) => g.trim()).filter(Boolean) : []), cov, st.mtimeMs, st.size,
-          t.artist || t.album_artist || (m ? m[1].trim() : ''), t.album || '', '', null, null, null]);
+          t.artist || t.album_artist || (m && !/^\d+$/.test(m[1].trim()) ? m[1].trim() : ''), t.album || '', '', null, null, null]);
       } else {
         // the folder names are the fallback for the show / book / host / author
         const parent = tidy(path.basename(dir)), grand = tidy(path.basename(path.dirname(dir)));

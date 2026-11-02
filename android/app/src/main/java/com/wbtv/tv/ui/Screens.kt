@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -299,7 +300,7 @@ private fun ChannelRow(vm: AppVm, t: WbtvTheme, u: Float, ch: Channel, index: In
             Modifier.width(chW).fillMaxHeight().padding(vertical = if (t.flat) 2.dp else 0.dp).background(labelBg).padding(horizontal = 8.dp * u),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp * u),
         ) {
-            Text("${ch.number ?: ""}", color = if (selRow) t.selTxt else if (t.flat) t.txt else t.sel, fontWeight = FontWeight.Bold, fontSize = (15 * u).sp, modifier = Modifier.width((28 * u).dp))
+            Text("${ch.number ?: ""}", color = if (selRow) t.selTxt else if (t.flat) t.txt else t.sel, fontWeight = FontWeight.Bold, fontSize = (15 * u).sp, maxLines = 1, softWrap = false, modifier = Modifier.widthIn(min = (28 * u).dp)) // four-digit numbers (1700) used to wrap
             Text(
                 if (t.flat) ch.name.uppercase() else ch.name, color = if (selRow) t.selTxt else t.txt, fontSize = (12.5f * u).sp, lineHeight = (14f * u).sp,
                 fontWeight = if (t.flat) FontWeight.ExtraBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis,
