@@ -12,6 +12,7 @@ import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
 const SEG_SECONDS = 4;
+const fp = (p) => String(p).split(path.sep).join('/'); // paths inside ffmpeg filter strings: forward slashes only (a backslash is an escape there)
 const probeMemo = new Map(); // file -> { at, info }: remembering what a file contains saves a slow network-share round trip on every tune-in
 async function probeFile(file) {
   const hit = probeMemo.get(file);
@@ -21,6 +22,7 @@ async function probeFile(file) {
   return info;
 }
 const firstOf = (json) => { try { return JSON.parse(json || '[]')[0] || ''; } catch { return ''; } };
+let instances = 0; // every broadcaster gets its own folder, so a stopping one can never delete the files of its successor
 const LEAD = 10;        // seconds of video we keep buffered ahead of the wall clock
 const WINDOW = 6;       // segments advertised in the live playlist
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -33,7 +35,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export class Broadcaster {
   constructor(db, channelId, onStop) {
     this.db = db; this.id = channelId; this.onStop = onStop;
-    this.dir = path.join(cfg.tmpDir, 'live', String(channelId));
+    this.tag = `${channelId}_${++instances}`;
+    this.dir = path.join(cfg.tmpDir, 'live', this.tag);
     this.segs = [];        // { g, file, dur, disc, discBefore }
     this.gCounter = 0; this.discCounter = 0;
     this.runs = []; this.runNo = 0; this.proc = null;
@@ -58,6 +61,7 @@ export class Broadcaster {
   }
 
   start() {
+    this.dlog('start');
     fs.rmSync(this.dir, { recursive: true, force: true });
     fs.mkdirSync(this.dir, { recursive: true });
     const kind = this.db.prepare('SELECT kind FROM channels WHERE id=?').get(this.id)?.kind;
@@ -75,8 +79,11 @@ export class Broadcaster {
     if (!this.viewers.size) this.stop();
   }
 
+  dlog(...a) { if (process.env.WBTV_DEBUG) console.log(`[bc ${this.tag}]`, ...a); }
+
   stop() {
     if (this.stopped) return;
+    this.dlog('stop');
     this.stopped = true;
     clearInterval(this.reaper);
     try { this.proc?.kill('SIGKILL'); } catch { /* gone */ }
@@ -184,6 +191,9 @@ export class Broadcaster {
       }
 
       if (this.stopped) return;
+      // a piece that keeps dying after a second or two (damaged file) must not respawn ffmpeg in a tight loop: give up on it
+      if (ok && produced < Math.min(dur - 1.2, 3)) this.shortRuns = (this.shortRuns || 0) + 1; else this.shortRuns = 0;
+      if (this.shortRuns >= 3) { this.shortRuns = 0; ok = false; console.error(`[ch${this.id}] a piece keeps failing, showing the test card instead: ${plan?.file || 'generated'}`); }
       if (ok) {
         cursor += produced >= dur - 1.2 ? dur : produced;
       } else {
@@ -254,8 +264,8 @@ export class Broadcaster {
         const lf = path.join(dir, `${this.runNo}_${i}_l.txt`), tf = path.join(dir, `${this.runNo}_${i}_t.txt`);
         fs.writeFileSync(lf, c.label); fs.writeFileSync(tf, title);
         v += `,drawbox=x=0:y=ih*0.79:w=iw:h=ih*0.16:color=black@0.72:t=fill:${en}` +
-          `,drawtext=fontfile=${cfg.fontFile}:textfile=${lf}:x=w*0.045:y=h*0.805:fontsize=${f1}:fontcolor=0xffd400:${en}` +
-          `,drawtext=fontfile=${cfg.fontFile}:textfile=${tf}:x=w*0.045:y=h*0.855:fontsize=${f2}:fontcolor=white:${en}`;
+          `,drawtext=fontfile=${cfg.fontFile}:textfile=${fp(lf)}:expansion=none:x=w*0.045:y=h*0.805:fontsize=${f1}:fontcolor=0xffd400:${en}` +
+          `,drawtext=fontfile=${cfg.fontFile}:textfile=${fp(tf)}:expansion=none:x=w*0.045:y=h*0.855:fontsize=${f2}:fontcolor=white:${en}`;
       });
     }
     v += e.tail + '[v]';
@@ -300,7 +310,7 @@ export class Broadcaster {
     fs.mkdirSync(dir, { recursive: true });
     const f = path.join(dir, `${this.runNo}_${name}.txt`);
     fs.writeFileSync(f, String(text ?? '').replace(/[\r\n]+/g, ' ').slice(0, 60));
-    return f;
+    return fp(f);
   }
 
   runContent(file, offset, dur, hasAudio, burst, meta) {
@@ -336,7 +346,7 @@ export class Broadcaster {
     f += hasArt ? `[2:v]scale=-2:${artH},format=yuv420p[art];[b1][art]overlay=${Math.round(W * 0.06)}:${Math.round(H * 0.14)}[b2];` : '[b1]null[b2];';
     f += `[b2]${dt(files.l, Math.round(H * 0.16), Math.round(H * 0.04), '0xffd400')},${dt(files.t, Math.round(H * 0.23), Math.round(H * 0.07), 'white')},` +
       `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')},format=yuv420p${videoTail()}[v]`;
-    return f;
+    return fp(f);
   }
 
   /** A radio track: no picture of its own, so we draw one. */
@@ -400,7 +410,7 @@ export class Broadcaster {
     const { height: H } = cfg;
     const logo = logoFile(this.id);
     if (logo) {
-      return `[in]${vf}[m0];movie=${logo},scale=-2:${Math.round(H * 0.075)},format=rgba,colorchannelmixer=aa=0.75[lg];[m0][lg]overlay=W-w-W*0.03:H*0.045${tail}[out]`;
+      return `[in]${vf}[m0];movie=${fp(logo)},scale=-2:${Math.round(H * 0.075)},format=rgba,colorchannelmixer=aa=0.75[lg];[m0][lg]overlay=W-w-W*0.03:H*0.045${tail}[out]`;
     }
     if (!fs.existsSync(cfg.fontFile)) return vf + tail;
     const name = this.textFile('bug', this.chInfo().name);
@@ -467,11 +477,13 @@ export class Broadcaster {
         '-hls_segment_filename', path.join(this.dir, `r${no}_%05d.ts`), run.playlist];
       const p = spawn(cfg.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
       this.proc = p;
+      this.dlog(`spawn run ${no}, stopped=${this.stopped}, dirExists=${fs.existsSync(this.dir)}`);
       this.mark('spawn');
       let err = '';
       p.stderr.on('data', (d) => (err = (err + d).slice(-1500)));
       p.on('error', (e) => { err += String(e); });
-      p.on('close', () => {
+      p.on('close', (code) => {
+        this.dlog(`close run ${no} code=${code} stopped=${this.stopped} produced=${run.produced}`);
         run.ended = true;
         this.sync();
         this.streamTime += run.produced;
