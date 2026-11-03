@@ -73,6 +73,8 @@ export function nfoXml(r, old) {
   if (r.year) lines.push(`  <year>${r.year}</year>`);
   for (const g of r.genres || []) lines.push(`  <genre>${x(g)}</genre>`);
   if (old?.plot) lines.push(`  <plot>${x(old.plot)}</plot>`);
+  if (r.director) lines.push(`  <director>${x(r.director)}</director>`);
+  if (r.imvdb) lines.push(`  <uniqueid type="imvdb">${x(r.imvdb)}</uniqueid>`);
   if (old?.added) lines.push(`  <dateadded>${x(old.added)}</dateadded>`);
   lines.push('  <lockdata>true</lockdata>', '</musicvideo>', '');
   return lines.join('\n');

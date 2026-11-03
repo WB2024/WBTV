@@ -17,6 +17,14 @@ The complete feature list, by area. For what's new in each version see the [rele
 - Minimum channel size, genre channels for every show, movie studio/decade channels and the films needed for a studio channel are all adjustable.
 - Channel search box, and *Enable shown* for bulk switching. Empty channels (their library was removed) are marked *empty* and can be removed with one click.
 
+## Music video discovery and download (IMVDb, optional)
+
+- Setup > **Music videos**: lists the artists in your music library (Navidrome or folders), looks each one up on [IMVDb](https://imvdb.com/developers/api), and shows their videos with *in your library* marked. Download one, a selection, or everything you are missing.
+- Saved as `Artist/Artist - Title.mp4` with a clean `.nfo` (the real release year from IMVDb, your library's genre for that artist, the IMVDb id and the director) and a poster, then WBTV rescans so the video appears in your channels.
+- You need your own free IMVDb app key. It is stored on the server and never shown in the browser. It is off until a **WBTV password**, the key, and a **writable music video folder** are all in place: WBTV keeps your media read-only unless you choose to make that one folder writable.
+- One download at a time, at low priority; a failed download shows its reason and can be retried; the queue survives a restart.
+- Downloading from YouTube or Vimeo may go against their terms. It is your choice to use it, and WBTV does not enable it by default.
+
 ## Channel groups
 
 - Every TV, movie, music-video and clips library can be given a **channel group** (Setup > Libraries). Libraries that share a group name become **one channel**: for example *Stand Up Films*, *Stand Up Shows* and their *Unmanaged* folders all in the group "Stand Up".

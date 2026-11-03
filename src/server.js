@@ -11,6 +11,7 @@ import { inferChannels, syncLiveChannels, talkPerTitle } from './channels.js';
 import { checkStreams, isUrl } from './iptv.js';
 import { discover, forgetSource, normalizeUrl } from './mediaserver.js';
 import { subsonicDiscover } from './navidrome.js';
+import { registerImvdb } from './imvdb.js';
 import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './scheduler.js';
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
@@ -537,6 +538,7 @@ app.get('/live/:id/:seg', async (req, reply) => {
 
 app.post('/live/:id/stop', async (req) => { live.get(Number(req.params.id))?.leave(req.query.v || req.body?.v); return { ok: true }; });
 
+registerImvdb(app, { db, authEnabled: () => !!getToken(), runScan });
 registerIptvOut(app, db, broadcaster, getToken);
 
 // ---------------------------------------------------------------- static

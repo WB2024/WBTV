@@ -239,6 +239,10 @@ Big playlists (more than 80 streams) start with the first 80 *working* channels 
 
 **Web keys:** arrows to browse, Enter to watch, 0-9 for a channel number, Space to pause, Left/Right to rewind or skip in fullscreen, L to go back to live, F for fullscreen, G or Esc for the guide, `[` and `]` for the filter chips.
 
+### Find and download music videos (optional)
+
+Setup > **Music videos** can look up each artist in your music library on [IMVDb](https://imvdb.com/developers/api) (bring your own free app key), show which of their videos you already have, and download the rest into your Music Video folder with the right name, year and genre. It needs a WBTV password and that one folder mounted **writable** (drop the `:ro` on just that volume). See [docs/FEATURES.md](docs/FEATURES.md#music-video-discovery-and-download-imvdb-optional).
+
 ### Tidy your music videos (optional)
 
 Music videos from YouTube usually carry an upload date as their "year" and a messy file name, which gives you one or two dull channels. WBTV ships a small tool that renames them to `Artist - Title`, writes proper `.nfo` files with the real release year and genre (taken from your own music library), and sets duplicate copies aside. It is a dry run until you say `--apply`, and everything can be undone. See [tools/README.md](tools/README.md).

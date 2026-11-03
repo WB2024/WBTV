@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS libraries (
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'jellyfin', name TEXT, url TEXT NOT NULL UNIQUE, token TEXT, user_id TEXT, salt TEXT
 );
+-- music videos queued for download from IMVDb (optional feature; see src/imvdb.js)
+CREATE TABLE IF NOT EXISTS mv_jobs (
+  id INTEGER PRIMARY KEY, imvdb_id TEXT NOT NULL UNIQUE, artist TEXT NOT NULL, title TEXT, year INTEGER,
+  status TEXT NOT NULL DEFAULT 'queued', error TEXT, file TEXT, created INTEGER, updated INTEGER
+);
 CREATE TABLE IF NOT EXISTS shows (
   id INTEGER PRIMARY KEY, library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
   path TEXT NOT NULL UNIQUE, title TEXT, plot TEXT, year INTEGER, rating REAL, mpaa TEXT,

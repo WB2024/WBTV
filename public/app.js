@@ -350,14 +350,85 @@ async function openSetup() {
 }
 function renderSetup() {
   const m = $('#modal');
-  const tabs = [['libraries', 'Libraries'], ['live', 'Live TV'], ['channels', 'Channels'], ['ads', 'Ads'], ['announce', 'Announcements'], ['settings', 'Settings'], ['appearance', 'Appearance']];
+  const tabs = [['libraries', 'Libraries'], ['live', 'Live TV'], ['channels', 'Channels'], ['ads', 'Ads'], ['announce', 'Announcements'], ['mvdb', 'Music videos'], ['settings', 'Settings'], ['appearance', 'Appearance']];
   const body = h('div', { class: 'body' });
   m.replaceChildren(h('div', { class: 'dlg' },
     h('header', {}, h('img', { src: '/img/logo.png', alt: 'WBTV', style: 'height:30px;margin-right:10px' }), h('b', { style: 'margin-right:12px' }, 'Setup'),
       tabs.map(([k, l]) => h('button', { class: `tab ${k === setupTab ? 'on' : ''}`, onclick: () => { setupTab = k; renderSetup(); } }, l)),
       h('button', { class: 'x', onclick: closeModal }, 'Close ✕')), body));
   clearInterval(pollTimer);
-  ({ libraries: tabLibraries, live: tabLive, channels: tabChannels, ads: tabAds, announce: tabAnnounce, settings: tabSettings, appearance: tabAppearance })[setupTab](body);
+  ({ libraries: tabLibraries, live: tabLive, channels: tabChannels, ads: tabAds, announce: tabAnnounce, mvdb: tabMusicVideos, settings: tabSettings, appearance: tabAppearance })[setupTab](body);
+}
+
+// ---- Music videos (IMVDb): browse your artists, see their videos, download the ones you pick ----------------------------------------------
+async function tabMusicVideos(body) {
+  const st = await api('/api/imvdb/status');
+  const intro = h('p', { class: 'note' }, 'Optional. Uses IMVDb (the Internet Music Video Database) to list each artist\'s music videos, and downloads the ones you pick into your Music Video folder as "Artist/Artist - Title.mp4" with the correct release year and genre. You need your own free IMVDb app key (imvdb.com/developers/apps/new). Downloading from YouTube or Vimeo may go against their terms: it is your choice to use this, and it is off until you set it up.');
+  const msg = h('div', {});
+  const keyBox = h('input', { type: 'password', placeholder: st.keySet ? 'Key saved (enter a new one to replace it)' : 'IMVDb app key', style: 'width:320px', autocomplete: 'off' });
+  const saveKey = h('button', { onclick: async () => { try { await api('/api/imvdb/key', { method: 'PUT', body: { key: keyBox.value } }); renderSetup(); } catch (e) { msg.replaceChildren(h('div', { class: 'err' }, e.message)); } } }, 'Save key');
+  const clearKey = st.keySet ? h('button', { class: 'sm danger', onclick: async () => { await api('/api/imvdb/key', { method: 'PUT', body: { key: '' } }); renderSetup(); } }, 'Remove key') : null;
+  const keyRow = h('div', { class: 'row2' }, keyBox, saveKey, clearKey);
+  body.append(intro, keyRow, msg);
+  if (!st.ready) {
+    body.append(h('h3', {}, 'Not ready yet'), h('ul', {}, st.problems.map((p) => h('li', {}, p))),
+      h('p', { class: 'note' }, 'WBTV keeps your media read-only by default. To use this you make just the music video folder writable in your Docker setup, for example: "- /path/to/Music Video:/path/to/Music Video" without ":ro". Your key is stored on the server and never shown here.'));
+    return;
+  }
+  const left = h('div', { style: 'flex:0 0 260px;max-height:420px;overflow:auto' });
+  const right = h('div', { style: 'flex:1;min-width:300px' }, h('p', { class: 'note' }, 'Pick an artist on the left.'));
+  const queue = h('div', {});
+  const search = h('input', { type: 'text', placeholder: 'Find an artist…', style: 'width:100%' });
+  let artists = [];
+  const renderArtists = () => {
+    const t = search.value.toLowerCase();
+    left.replaceChildren(...artists.filter((a) => !t || a.name.toLowerCase().includes(t)).slice(0, 200).map((a) =>
+      h('div', { class: 'chrow', style: 'cursor:pointer;padding:3px 4px', onclick: () => openArtist(a.name) }, `${a.name} `, h('span', { class: 'note' }, `${a.albums} album${a.albums === 1 ? '' : 's'}${a.have ? ` · ${a.have} video${a.have === 1 ? '' : 's'}` : ''}`))));
+  };
+  search.addEventListener('input', renderArtists);
+  async function openArtist(name) {
+    right.replaceChildren(h('p', { class: 'note' }, `Looking up ${name} on IMVDb…`));
+    try {
+      const found = await api('/api/imvdb/search?q=' + encodeURIComponent(name));
+      if (!found.length) { right.replaceChildren(h('p', { class: 'note' }, `IMVDb has no artist called "${name}".`)); return; }
+      const exact = found.find((f) => f.name.toLowerCase() === name.toLowerCase());
+      if (exact || found.length === 1) return showVideos((exact || found[0]).id, name);
+      right.replaceChildren(h('p', {}, `Which "${name}"?`), ...found.map((f) => h('div', {}, h('button', { class: 'sm', onclick: () => showVideos(f.id, name) }, 'Choose'), ` ${f.name} (${f.videos} videos)`)));
+    } catch (e) { right.replaceChildren(h('div', { class: 'err' }, e.message)); }
+  }
+  async function showVideos(id, name) {
+    right.replaceChildren(h('p', { class: 'note' }, 'Loading videos…'));
+    try {
+      const d = await api(`/api/imvdb/entity/${encodeURIComponent(id)}?artist=${encodeURIComponent(name)}`);
+      const checks = [];
+      const rows = d.videos.sort((a, b) => (a.year || 0) - (b.year || 0)).map((v) => {
+        const c = h('input', { type: 'checkbox', disabled: v.have || ['queued', 'running', 'done'].includes(v.job) });
+        checks.push([c, v]);
+        return h('tr', {}, h('td', {}, c), h('td', {}, String(v.year || '')), h('td', {}, v.title), h('td', { class: v.job === 'failed' ? 'err' : '' }, v.have ? 'in your library' : v.job || ''));
+      });
+      const missing = d.videos.filter((v) => !v.have && !['queued', 'running', 'done'].includes(v.job));
+      const queueVideos = async (list) => { if (!list.length) return; await api('/api/imvdb/jobs', { method: 'POST', body: { artist: name, videos: list.map((v) => ({ id: v.id, title: v.title, year: v.year })) } }); showVideos(id, name); loadQueue(); };
+      right.replaceChildren(h('h3', {}, `${d.entity.name || name}: ${d.total || d.videos.length} videos on IMVDb`),
+        h('div', { class: 'row2' },
+          h('button', { onclick: () => queueVideos(checks.filter(([c]) => c.checked).map(([, v]) => v)) }, 'Download selected'),
+          h('button', { onclick: () => { if (missing.length < 15 || confirm(`Download ${missing.length} videos?`)) queueVideos(missing); } }, `Download all missing (${missing.length})`)),
+        d.videos.length ? h('table', {}, h('tr', {}, ['', 'Year', 'Title', ''].map((t) => h('th', {}, t))), rows) : h('p', { class: 'note' }, 'No videos listed.'));
+    } catch (e) { right.replaceChildren(h('div', { class: 'err' }, e.message)); }
+  }
+  async function loadQueue() {
+    const jobs = await api('/api/imvdb/jobs').catch(() => []);
+    queue.replaceChildren(h('h3', {}, `Downloads (${jobs.filter((j) => j.status === 'queued' || j.status === 'running').length} waiting)`),
+      jobs.length ? h('table', {}, h('tr', {}, ['Artist', 'Title', 'Status', ''].map((t) => h('th', {}, t))), jobs.slice(0, 60).map((j) => h('tr', {}, h('td', {}, j.artist), h('td', {}, j.title),
+        h('td', { class: j.status === 'failed' ? 'err' : '', title: j.error || '' }, j.status === 'failed' ? `failed: ${j.error || ''}` : j.status),
+        h('td', {}, j.status === 'failed' ? h('button', { class: 'sm', onclick: async () => { await api(`/api/imvdb/jobs/${j.id}/retry`, { method: 'POST', body: {} }); loadQueue(); } }, 'Retry') : j.status === 'queued' ? h('button', { class: 'sm', onclick: async () => { await api(`/api/imvdb/jobs/${j.id}/cancel`, { method: 'POST', body: {} }); loadQueue(); } }, 'Cancel') : '')))) : h('p', { class: 'note' }, 'Nothing queued.'),
+      jobs.some((j) => ['done', 'failed', 'cancelled'].includes(j.status)) ? h('button', { class: 'sm', onclick: async () => { await api('/api/imvdb/jobs', { method: 'DELETE' }); loadQueue(); } }, 'Clear finished') : null);
+  }
+  body.append(h('h3', {}, 'Your artists'), h('div', { style: 'display:flex;gap:14px;flex-wrap:wrap' }, h('div', { style: 'flex:0 0 260px' }, search, left), right), queue);
+  artists = await api('/api/imvdb/artists').catch(() => []);
+  renderArtists();
+  loadQueue();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(loadQueue, 4000);
 }
 
 const LIB_TYPES = {

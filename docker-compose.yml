@@ -17,5 +17,7 @@ services:
     volumes:
       - ./config:/config                # database, covers, voices, downloaded ads
       - /path/to/your/media:/media:ro   # your media, read-only. WBTV never changes your files
+    # Optional: to let Setup > Music videos save downloads, mount your music video folder WITHOUT :ro, e.g.
+    #   - /path/to/Music Video:/path/to/Music Video
     tmpfs:
       - /tmp/wbtv:size=2g               # live HLS segments incl. the pause/rewind buffer (RAM)
