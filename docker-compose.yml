@@ -1,5 +1,4 @@
-# WBTV - your own media as a live TV guide.
-# On the LXC this lives in /opt/stacks/wbtv/compose.yaml (Dockge).
+# WBTV - your own media as live TV.   Start it with:  docker compose up -d   then open http://<this-machine>:8420
 services:
   wbtv:
     image: wb20244/wbtv:latest
@@ -8,15 +7,15 @@ services:
     ports:
       - 8420:8080
     environment:
-      - TZ=Europe/London
-      # - WBTV_WIDTH=1280      # stream resolution
+      - TZ=Europe/London                # your timezone, so the guide matches your clock
+      # - WBTV_WIDTH=1280               # stream resolution (also in Settings)
       # - WBTV_HEIGHT=720
-      # - WBTV_CRF=23          # x264 quality (lower = better/bigger)
-      # - WBTV_PRESET=veryfast # x264 speed preset
-    # devices:                            # optional: GPU encoding (Intel/AMD VAAPI), see README
+      # - WBTV_CRF=23                   # x264 quality (lower = better/bigger)
+      # - WBTV_PRESET=veryfast          # x264 speed preset
+    # devices:                          # optional: GPU encoding (Intel/AMD VAAPI), see the README
     #   - /dev/dri:/dev/dri
     volumes:
-      - /opt/wbtv:/config                  # database + downloaded ads
-      - /mnt/Main20TB:/mnt/Main20TB:ro    # media root (same path as on the host)
+      - ./config:/config                # database, covers, voices, downloaded ads
+      - /path/to/your/media:/media:ro   # your media, read-only. WBTV never changes your files
     tmpfs:
-      - /tmp/wbtv:size=2g                  # live HLS segments incl. the pause/rewind buffer (RAM)
+      - /tmp/wbtv:size=2g               # live HLS segments incl. the pause/rewind buffer (RAM)

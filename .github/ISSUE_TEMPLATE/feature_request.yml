@@ -1,0 +1,10 @@
+name: Feature request
+description: An idea to make WBTV better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like WBTV to do?
+      description: Describe the problem first, then your idea. How would you use it?
+    validations: { required: true }

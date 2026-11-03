@@ -4,6 +4,7 @@
   "description": "Self-hosted EPG / fake-live-TV for your own media library",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "scripts": { "start": "node src/server.js", "test": "node --test \"test/**/*.test.js\"" },
   "engines": { "node": ">=22.13" },
   "dependencies": {

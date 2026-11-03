@@ -1,0 +1,32 @@
+name: Bug report
+description: Something is not working as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you see instead? Screenshots help.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: WBTV version
+      description: Shown at http://<server>:8420/api/status
+    validations: { required: true }
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options: [Web UI, Android TV app, Plex/Jellyfin/Emby tuner, IPTV app (M3U/XMLTV), Server / scanning, Other]
+    validations: { required: true }
+  - type: textarea
+    id: env
+    attributes:
+      label: Your setup
+      description: Host OS and CPU (amd64 / arm64), how you run Docker, and the media type involved (TV, movies, music, radio, live).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output of /api/status and the end of `docker logs wbtv`
+      render: text
