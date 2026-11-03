@@ -34,7 +34,7 @@ async function call(key, p, { base = BASE, timeout = 20000 } = {}) {
     let reason = '';
     try { reason = JSON.parse(text).error || ''; } catch { /* not the API's own JSON answer */ }
     // the API answers a bad key with JSON; a plain web-server 403 page means the request was blocked before the key was even looked at
-    throw new Error(reason ? `IMVDb says: ${reason}` : 'IMVDb's web server blocked the request (403) before looking at the key. The app may not be activated yet on imvdb.com, or their server does not accept requests from this network. Check the app's status on your IMVDb developer page, or ask IMVDb support.');
+    throw new Error(reason ? `IMVDb says: ${reason}` : "IMVDb's web server blocked the request (403) before looking at the key. The app may not be activated yet on imvdb.com, or their server does not accept requests from this network. Check the app's status on your IMVDb developer page, or ask IMVDb support.");
   }
   if (r.status === 429) throw new Error('IMVDb rate limit reached, try again in a minute');
   if (!r.ok) throw new Error(`IMVDb answered ${r.status}`);
