@@ -269,7 +269,7 @@ def cmd_top(a):
 
 def read_list(path):
     """A list file is named after the artist ('Iggy Pop.txt'), or starts with 'artist: Name'. Lines: <link>  or  <link> | <title>. Returns (artist, [(link, title|None)])."""
-    artist, items = os.path.splitext(os.path.basename(path))[0].strip(), []
+    artist, items = re.sub(r'[ _-]*(youtube[ _-]*)?(links?|urls?|videos?)$', '', os.path.splitext(os.path.basename(path))[0].replace('_', ' '), flags=re.I).strip(), []
     for raw in open(path, encoding='utf-8-sig'):
         line = raw.strip()
         if not line or line.startswith('#'): continue
@@ -288,6 +288,7 @@ def cmd_batch(a):
     ok = bad = 0
     for f in files:
         artist, items = read_list(f)
+        if a.artist: artist = a.artist
         ar = find_artist(c, artist); artist = ar['name'] if ar['id'] else artist
         print(f'{artist}: {len(items)} links ({os.path.basename(f)})')
         genres = nd_genre(c, ar['id']) if ar['id'] else []
@@ -346,7 +347,7 @@ def main():
     q.add_argument('--all-artists', action='store_true'); q.add_argument('--limit', type=int, default=50); q.set_defaults(f=cmd_get)
     q = s.add_parser('top', help='download missing videos for your top artists by song count'); q.add_argument('count', nargs='?', type=int, default=20)
     q.add_argument('-n', action='store_true', help='dry run'); q.add_argument('--limit', type=int, default=50); q.add_argument('--lists', metavar='DIR', help='instead of downloading, write an empty list file per artist into DIR'); q.set_defaults(f=cmd_top)
-    q = s.add_parser('batch', help='download the links in a list file, or every .txt in a folder'); q.add_argument('path'); q.add_argument('-n', action='store_true', help='dry run'); q.set_defaults(f=cmd_batch)
+    q = s.add_parser('batch', help='download the links in a list file, or every .txt in a folder'); q.add_argument('path'); q.add_argument('--artist', help='the artist, if the file name does not say'); q.add_argument('-n', action='store_true', help='dry run'); q.set_defaults(f=cmd_batch)
     q = s.add_parser('url'); q.add_argument('url'); q.add_argument('--artist'); q.add_argument('--title'); q.add_argument('--force', action='store_true'); q.set_defaults(f=cmd_url)
     a = p.parse_args()
     if not a.cmd: p.print_help(); return
