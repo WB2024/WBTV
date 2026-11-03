@@ -105,6 +105,7 @@ export const tx = (db, fn) => {
 const DEFAULTS = {
   autoDaypart: true,       // lean towards what suits the time of day (kids after school, horror late, cartoons on Saturday morning)
   eraAds: true,            // prefer adverts from the same era as the programme (needs a year in the ad's title or folder name)
+  lyrics: true,            // show lyrics (.lrc / .srt / .txt beside the file, or in its tags) on music radio
   channelBug: true,        // small channel logo (or name) in the corner of programmes
   identsEnabled: false,    // a short generated station ident before each programme
   signOffEnabled: false,   // "closedown": a test card overnight, like old TV

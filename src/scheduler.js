@@ -403,7 +403,7 @@ export async function rescheduleFuture(db, now = Date.now() / 1000, channelIds =
 
 export function getBlockAt(db, channelId, t) {
   return db.prepare(`SELECT b.*, COALESCE(i.path, a.file) AS file, i.kind AS item_kind, i.title AS m_title, i.artist AS m_artist, i.album AS m_album,
-      i.poster AS m_poster, i.year AS m_year, i.genres AS m_genres FROM blocks b
+      i.poster AS m_poster, i.runtime AS m_runtime, i.year AS m_year, i.genres AS m_genres FROM blocks b
     LEFT JOIN items i ON i.id = b.item_id LEFT JOIN ads a ON a.id = b.ad_id
     WHERE b.channel_id=? AND b.start<=? AND b.end>? ORDER BY b.start DESC LIMIT 1`).get(channelId, t, t);
 }

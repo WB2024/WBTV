@@ -8,6 +8,7 @@ import { REEL } from './scheduler.js';
 import { getSettings } from './db.js';
 import { logoFile } from './logos.js';
 import { prepare as prepareNarration, cached as cachedNarration } from './tts.js';
+import { findLyrics, buildAss, fontFamily } from './lyrics.js';
 import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
@@ -162,7 +163,7 @@ export class Broadcaster {
         plan = {
           file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start,
           meta: ['musicvideo', 'track', 'talk'].includes(block.item_kind)
-            ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster, label: firstOf(block.m_genres) } : null,
+            ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster, runtime: block.m_runtime, label: firstOf(block.m_genres) } : null,
         };
       } else {
         // a hole in the schedule, or an ad that has since been removed: fill with a real ad, not the test card
@@ -341,7 +342,7 @@ export class Broadcaster {
   }
 
   /** Filter graph for audio-only programming: cover art, now-playing text and a live waveform. Input 0 = audio, 1 = background, 2 = art. */
-  audioVisual({ hasArt, label, title, sub1, sub2 }) {
+  audioVisual({ hasArt, label, title, sub1, sub2, ass }) {
     const { width: W, height: H } = cfg;
     const wh = Math.round(H * 0.2), artH = Math.round(H * 0.5);
     const tx = hasArt ? Math.round(W * 0.06 + artH + W * 0.04) : Math.round(W * 0.08);
@@ -352,19 +353,33 @@ export class Broadcaster {
       `[w]volume=3,alimiter=limit=0.95,showwaves=s=${W}x${wh}:mode=cline:colors=cyan:rate=25:scale=sqrt:draw=full,format=yuv420p[wv];[1:v]format=yuv420p[bg];[bg][wv]overlay=0:${H - wh - Math.round(H * 0.04)}[b1];`;
     f += hasArt ? `[2:v]scale=-2:${artH},format=yuv420p[art];[b1][art]overlay=${Math.round(W * 0.06)}:${Math.round(H * 0.14)}[b2];` : '[b1]null[b2];';
     f += `[b2]${dt(files.l, Math.round(H * 0.16), Math.round(H * 0.04), '0xffd400')},${dt(files.t, Math.round(H * 0.23), Math.round(H * 0.07), 'white')},` +
-      `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')},format=yuv420p${videoTail()}[v]`;
+      `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')}${ass ? `,subtitles=filename=${fp(ass)}:fontsdir=${fp(path.dirname(cfg.fontFile))}` : ''},format=yuv420p${videoTail()}[v]`;
     return fp(f);
   }
 
   /** A radio track: no picture of its own, so we draw one. */
-  runAudio(plan, dur, burst) {
+  async runAudio(plan, dur, burst) {
     const e = this.encodeArgs();
     const m = plan.meta;
     const art = m.poster && fs.existsSync(m.poster) ? m.poster : null;
     const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-ss', plan.offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', plan.file,
       '-f', 'lavfi', '-i', `color=c=0x0a1030:s=${cfg.width}x${cfg.height}:r=25`];
     if (art) args.push('-loop', '1', '-framerate', '25', '-i', art);
-    const filter = this.audioVisual({ hasArt: !!art, label: m.kind === 'talk' ? (m.label || 'ON AIR').toUpperCase() : 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
+    // lyrics (sidecar .lrc/.srt/.txt or tags) drawn under the art; any trouble just means no lyrics
+    let ass = null;
+    try {
+      if (m.kind === 'track' && getSettings(this.db).lyrics) {
+        const lyr = await findLyrics(plan.file);
+        if (lyr) {
+          const { width: W, height: H } = cfg, artH = Math.round(H * 0.5);
+          const tx = art ? Math.round(W * 0.06 + artH + W * 0.04) : Math.round(W * 0.08);
+          const dir = path.join(this.dir, 'captions'); fs.mkdirSync(dir, { recursive: true });
+          ass = path.join(dir, `${this.runNo}_lyr.ass`);
+          fs.writeFileSync(ass, buildAss(lyr, { offset: plan.offset, dur, total: m.runtime || dur + plan.offset, W, H, tx, font: fontFamily(cfg.fontFile) }));
+        }
+      }
+    } catch { ass = null; }
+    const filter = this.audioVisual({ ass, hasArt: !!art, label: m.kind === 'talk' ? (m.label || 'ON AIR').toUpperCase() : 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
     args.push('-t', dur.toFixed(3), '-filter_complex', filter, '-map', '[v]', '-map', '[a]', ...e.codec);
     return this.runFfmpeg(args);
   }

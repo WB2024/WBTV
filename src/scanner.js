@@ -201,14 +201,24 @@ export const TALK = {
 };
 
 /** Audiobooks and many music files carry their cover inside the file: pull it out once (cached by file identity). */
-async function embeddedCover(file, st) {
+async function embeddedCover(file, st, key = `${file}|${st.size}|${st.mtimeMs}`) {
   const dir = path.join(cfg.configDir, 'covers');
-  const out = path.join(dir, crypto.createHash('md5').update(`${file}|${st.size}|${st.mtimeMs}`).digest('hex') + '.jpg');
+  const out = path.join(dir, crypto.createHash('md5').update(key).digest('hex') + '.jpg');
   try { await fs.access(out); return out; } catch { /* not extracted yet */ }
   await fs.mkdir(dir, { recursive: true });
   const r = await run(cfg.ffmpeg, ['-nostdin', '-v', 'error', '-y', '-i', file, '-an', '-map', '0:v:0?', '-frames:v', '1', '-vf', 'scale=-2:600', out], { timeout: 30000 });
   if (r.code !== 0) return null;
   return fs.access(out).then(() => out, () => null);
+}
+
+/** A sane year from the tags (some files carry DATE=0001-01-01), falling back to a "[1985] Album" folder name. */
+export function yearFromTags(t, dir = '') {
+  for (const k of [t.date, t.year, t.originalyear, t.originaldate, t.creation_time]) {
+    const y = parseInt(String(k || '').slice(0, 4), 10);
+    if (y >= 1900 && y <= 2100) return y;
+  }
+  const m = path.basename(dir).match(/^[[(](\d{4})[\])]/);
+  return m && m[1] >= 1900 ? Number(m[1]) : null;
 }
 
 const tidy = (s) => String(s || '').replace(/[._]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -222,6 +232,7 @@ const num = (s) => { const n = parseInt(String(s || '').split('/')[0], 10); retu
 async function scanRadio(db, lib, progress) {
   // self-heal: an earlier parser took the track number of "14 - Artist. Title" for the artist; re-read those few rows
   db.prepare("UPDATE items SET mtime=0 WHERE library_id=? AND kind='track' AND artist GLOB '[0-9]*' AND artist NOT GLOB '*[^0-9]*'").run(lib.id);
+  db.prepare("UPDATE items SET mtime=0 WHERE library_id=? AND kind IN ('track','talk') AND year IS NOT NULL AND year<1900").run(lib.id); // junk dates such as 0001-01-01
   const talk = TALK[lib.type] || null;
   const kind = talk ? 'talk' : 'track';
   const existing = new Map(db.prepare('SELECT path,mtime,size FROM items WHERE library_id=?').all(lib.id).map((r) => [r.path, r]));
@@ -234,6 +245,7 @@ async function scanRadio(db, lib, progress) {
     season=excluded.season,episode=excluded.episode,aired=excluded.aired`);
   let batch = [];
   const flush = () => { if (!batch.length) return; const b = batch; batch = []; tx(db, () => { for (const r of b) ins.run(...r); }); };
+  const albumArt = new Map();
   const skipDir = talk ? /^(@eadir|#recycle|\..*)$/i : EXTRA_DIR; // an "Interviews" folder is exactly what a talk library is made of
 
   async function visit(dir, depth) {
@@ -254,9 +266,12 @@ async function scanRadio(db, lib, progress) {
       const t = info.tags;
       const base = path.parse(e.name).name;
       const m = base.match(/^(?:\d+[\s.-]+)?(.+?)\s+-\s+(.+)$/);
-      const year = parseInt((t.date || t.year || t.creation_time || '').slice(0, 4), 10);
+      const year = yearFromTags(t, dir) ?? NaN;
       progress.changed++;
-      const cov = cover ? path.join(dir, cover) : await probes.run(() => embeddedCover(full, st));
+      // music: one extraction per album folder (its tracks share the picture); talk: per file (episodes and books differ)
+      let cov = cover ? path.join(dir, cover) : null;
+      if (!cov && talk) cov = await probes.run(() => embeddedCover(full, st));
+      else if (!cov) { if (!albumArt.has(dir)) albumArt.set(dir, probes.run(() => embeddedCover(full, st, 'album|' + dir))); cov = await albumArt.get(dir); }
       if (!talk) {
         batch.push([lib.id, kind, full, t.title || (m ? m[2].trim() : base.replace(/^\d+[\s.-]+/, '')), Number.isFinite(year) ? year : null, info.duration,
           j(t.genre ? t.genre.split(/[;/]/).map((g) => g.trim()).filter(Boolean) : []), cov, st.mtimeMs, st.size,
@@ -281,7 +296,28 @@ async function scanRadio(db, lib, progress) {
   flush();
   const gone = safeRemovals(db, lib, [...existing.keys()].filter((p) => !seen.has(p)), existing.size, seen.size, unreadable);
   if (gone.length) { const del = db.prepare('DELETE FROM items WHERE path=?'); tx(db, () => { for (const p of gone) del.run(p); }); progress.removed = (progress.removed || 0) + gone.length; }
+  if (!talk) await backfillCovers(db, lib);
   db.prepare('UPDATE libraries SET last_scan=? WHERE id=?').run(Date.now(), lib.id);
+}
+
+/**
+ * Tracks scanned before covers were read have no picture. Look once per album folder (a few hundred folders per scan, so a big
+ * library fills in over a day without a burst of work): the first track's embedded art goes to every track of that folder.
+ * A folder with no art is marked with '' so it is not tried again.
+ */
+async function backfillCovers(db, lib, maxDirs = 400) {
+  const rows = db.prepare('SELECT id,path FROM items WHERE library_id=? AND poster IS NULL ORDER BY path').all(lib.id);
+  if (!rows.length) return;
+  const byDir = new Map();
+  for (const r of rows) { const d = path.dirname(r.path); (byDir.get(d) || byDir.set(d, []).get(d)).push(r); }
+  const set = db.prepare('UPDATE items SET poster=? WHERE id=?');
+  let n = 0;
+  for (const [dir, list] of byDir) {
+    if (n++ >= maxDirs) break;
+    const st = await fs.stat(list[0].path).catch(() => null);
+    const cov = st ? await embeddedCover(list[0].path, st, 'album|' + dir) : null;
+    tx(db, () => { for (const r of list) set.run(cov || '', r.id); });
+  }
 }
 
 async function scanAdsLibrary(db, lib, progress) {

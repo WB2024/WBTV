@@ -212,13 +212,17 @@ function renderOsd() {
   const t = Date.now() / 1000 - behind;                                    // the broadcast time we are actually watching
   const cur = currentOf(ch, t), nxt = nextOf(ch, t);
   const state = video.paused ? '⏸ Paused' : behind ? `⏪ ${fmtClock(behind)} behind live` : '';
-  const pct = cur ? Math.min(100, Math.max(0, ((t - cur.start) / (cur.end - cur.start)) * 100)) : 0;
-  const left = cur ? Math.max(1, Math.ceil((cur.end - t) / 60)) : 0;
+  // music and radio: follow the track being watched (a programme is half an hour of tracks)
+  const trk = cur?.trk?.find((x) => x[0] <= t && x[1] > t);
+  const nxtTrk = trk && cur.trk.find((x) => x[0] >= trk[1] - 1 && x !== trk);
+  const [from, to] = trk ? [trk[0], trk[1]] : cur ? [cur.start, cur.end] : [0, 1];
+  const pct = cur ? Math.min(100, Math.max(0, ((t - from) / Math.max(1, to - from)) * 100)) : 0;
+  const left = cur ? Math.max(1, Math.ceil((to - t) / 60)) : 0;
   osd.replaceChildren(
     h('div', {}, h('span', { class: 'n' }, ch.number ?? ''), h('span', { class: 'nm' }, ch.name), state ? h('span', { class: 'st' }, state) : null),
-    cur ? h('div', { class: 'l now' }, `${cur.title}${cur.subtitle ? ' – ' + cur.subtitle : ''}`) : h('div', { class: 'l now' }, 'Adverts and announcements'),
-    cur ? h('div', { class: 'prog' }, h('div', { class: 'bar' }, h('i', { style: `width:${pct}%` })), h('span', {}, `${left} min left · until ${fmtTime(cur.end)}`)) : null,
-    nxt ? h('div', { class: 'l' }, `Next: ${nxt.title}  (${fmtTime(nxt.start)})`) : null,
+    cur ? h('div', { class: 'l now' }, trk ? trk[2] : `${cur.title}${cur.subtitle ? ' – ' + cur.subtitle : ''}`) : h('div', { class: 'l now' }, 'Adverts and announcements'),
+    cur ? h('div', { class: 'prog' }, h('div', { class: 'bar' }, h('i', { style: `width:${pct}%` })), h('span', {}, trk ? `${fmtClock(Math.max(0, to - t))} left · until ${fmtTime(to)}` : `${left} min left · until ${fmtTime(cur.end)}`)) : null,
+    nxtTrk ? h('div', { class: 'l' }, `Next: ${nxtTrk[2]}  (${fmtTime(nxtTrk[0])})`) : nxt ? h('div', { class: 'l' }, `Next: ${nxt.title}  (${fmtTime(nxt.start)})`) : null,
     behind ? h('div', { class: 'l' }, 'Press L (or End) to jump back to live') : null);
 }
 function showOsd(ms = 4500) {
@@ -622,6 +626,7 @@ async function tabSettings(body) {
     boolField(s, 'eraAds', 'Match adverts to the era', 'A 1990s programme gets 1990s adverts more often. WBTV reads the year from the ad title or folder name ("1994", "1990s", "80s"). Ads with no year are unaffected.'),
     h('h3', {}, 'Presentation'),
     boolField(s, 'channelBug', 'Channel bug on programmes', 'A small channel logo (add logos in the Channels tab) or, without one, the channel name, in the top-right corner.'),
+    boolField(s, 'lyrics', 'Show lyrics on music radio', 'Uses a .lrc (time-synced), .srt or .txt file with the same name as the track, or lyrics stored in the file tags. Plain text is paged across the song as an estimate.'),
     boolField(s, 'identsEnabled', 'Station idents', 'A 5 second generated ident (big channel number and name) before each programme. Re-plans the schedule.'),
     boolField(s, 'signOffEnabled', 'Closedown overnight', 'TV and movie channels show a test card and tone between these times, then start up again. The guide shows "Off air".'),
     h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Closedown from / to'),

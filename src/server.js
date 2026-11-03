@@ -211,7 +211,9 @@ app.get('/api/epg', (req) => {
   const tracks = new Map();
   const mrows = rows.filter((r) => ['music', 'radio'].includes(kinds.get(r.ch)) && r.kind !== 'talk');
   if (mrows.length) {
-    const q = db.prepare("SELECT i.artist, i.title FROM blocks b JOIN items i ON i.id=b.item_id WHERE b.programme_id=? AND b.kind='content' ORDER BY b.start LIMIT 4");
+    // every track of the programme with its time: the guide shows what is playing or still to come (not just the first four of the
+    // half hour), and the on-screen banner uses the times to follow the track actually being watched
+    const q = db.prepare("SELECT i.artist, i.title, b.start, b.end FROM blocks b JOIN items i ON i.id=b.item_id WHERE b.programme_id=? AND b.kind='content' ORDER BY b.start");
     for (const r of mrows) tracks.set(r.id, q.all(r.id));
   }
   for (const r of rows) {
@@ -220,9 +222,13 @@ app.get('/api/epg', (req) => {
       title: r.kind === 'talk' ? r.title : r.show_title || r.title,
       subtitle: r.kind === 'talk' ? [r.album, r.artist && r.artist !== r.album ? r.artist : ''].filter(Boolean).join(' · ') : r.show_title ? r.title : '',
       ...(tracks.has(r.id) ? (() => {
-        const t = tracks.get(r.id);
+        const all = tracks.get(r.id);
+        const ahead = all.filter((x) => x.end > now);
+        const t = (ahead.length ? ahead : all).slice(0, 4);
         const nm = (x) => (x.artist ? `${x.artist} – ${x.title}` : x.title);
-        return { title: t[0] ? nm(t[0]) : r.title, subtitle: t.slice(1).map(nm).join(' · '), plot: t.map(nm).join('\n') };
+        const near = r.end > now - 3600 && r.start < now + 1800; // only programmes around now need per-track times
+        return { title: t[0] ? nm(t[0]) : r.title, subtitle: t.slice(1).map(nm).join(' · '), plot: all.map(nm).join('\n'),
+          ...(near ? { trk: all.map((x) => [Math.round(x.start), Math.round(x.end), nm(x)]) } : {}) };
       })() : {}),
       season: r.season, episode: r.episode, year: r.year, plot: r.plot, rating: r.rating, mpaa: r.mpaa,
       genres: JSON.parse(r.genres || '[]'),
@@ -335,7 +341,7 @@ app.put('/api/settings', async (req) => {
   const after = setSettings(db, body);
   if (before.hwEncoder !== after.hwEncoder) await detectHw(after.hwEncoder);
   if (before.streamHeight !== after.streamHeight) applyStreamSize(after.streamHeight);
-  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'streamHeight']; // these never need a re-plan
+  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'lyrics', 'streamHeight']; // these never need a re-plan
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {
     const inferKeys = ['minChannelMinutes', 'tvGenreChannelsForAll', 'movieStudioChannels', 'movieStudioMinFilms', 'movieDecadeChannels'];

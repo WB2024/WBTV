@@ -124,6 +124,8 @@ Then open `http://<host>:8420`, click **Setup**, and add your first library fold
 | Podcast folders (one folder per show) | **Radio: podcasts** | One station that rotates between shows; each show's episodes play oldest first |
 | Audiobooks (`.m4b`, or a folder of chapter files per book) | **Radio: audiobooks** | One station: one book at a time, chapters in order, then the next book |
 
+**Lyrics:** put a `.lrc` (time-synced), `.srt` or `.txt` file next to a track with the same name (`01 - Song.flac` + `01 - Song.lrc`), or keep them in the file tags, and they appear under the cover art. Synced lyrics follow the song; plain text is paged across it as an estimate. Switch it off in Setup > Settings.
+
 Spoken-word stations read the tags in your files (title, show or book, author, date, track number, description) and fall back to folder names. Embedded cover art (the usual place for `.m4b` covers) is picked up automatically. Like a real broadcast, you join mid-episode.
 | `.m3u` / `.m3u8` playlist, single stream, or YouTube live URL | **Live TV** tab | One channel per stream, numbered from 600; dead streams hidden |
 
