@@ -151,6 +151,10 @@ app.post('/api/libraries', async (req, reply) => {
     const r = db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run(name || label, real, type);
     const id = Number(r.lastInsertRowid);
     console.log(`[libraries] added library ${id} "${name || label}" (${type}, ${real})`);
+    if (req.body?.group || req.body?.groupMode) { // a channel group given at creation, so no extra channel re-plan is needed
+      const mode = ['inferred', 'single', 'both'].includes(req.body.groupMode) ? req.body.groupMode : 'inferred';
+      db.prepare('UPDATE libraries SET channel_group=?, group_mode=? WHERE id=?').run(String(req.body.group || '').trim().slice(0, 60) || null, mode, id);
+    }
     runScan([id]); // fire and forget
     return { id };
   } catch (e) {
