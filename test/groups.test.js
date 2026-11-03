@@ -87,3 +87,15 @@ test('a mixed films-and-shows group channel actually schedules both, and a clips
   const n = db.prepare("SELECT COUNT(*) n FROM programmes p JOIN channels ch ON ch.id=p.channel_id WHERE ch.key='group:clips'").get().n;
   assert.ok(n > 10, `clips channel planned ${n} programmes`);
 });
+
+test('a group first created from a library of films becomes a TV channel once a library of shows joins it', () => {
+  const { lib, movie, show, db } = fresh();
+  const films = lib('Stand Up Films', 'movies', 'Stand Up', 'single');
+  movie(films, 'Film A');
+  inferChannels(db);
+  assert.equal(db.prepare("SELECT kind FROM channels WHERE key='group:stand-up'").get().kind, 'movie');
+  const shows = lib('Stand Up Shows', 'tv', 'Stand Up', 'single');
+  show(shows, 'Special');
+  inferChannels(db);
+  assert.equal(db.prepare("SELECT kind FROM channels WHERE key='group:stand-up'").get().kind, 'tv');
+});

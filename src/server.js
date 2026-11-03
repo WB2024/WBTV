@@ -179,6 +179,7 @@ app.patch('/api/libraries/:id', async (req, reply) => {
       runScan([lib.id]);
     }
   }
+  if (req.body?.group === undefined && req.body?.groupMode === undefined && req.body?.perTitle === undefined) return { ok: true }; // only a rename / re-point was asked for: done
   if (req.body?.group !== undefined || req.body?.groupMode !== undefined) { // channel group and how it becomes channels
     const mode = req.body.groupMode;
     if (mode !== undefined && !['inferred', 'single', 'both'].includes(mode)) return reply.code(400).send({ error: 'groupMode must be inferred, single or both' });

@@ -234,7 +234,7 @@ export function inferChannels(db) {
     const BASE = { music: 400, live: 600, radio: 800 };
     const freeFrom = (n) => { while (taken.has(n)) n++; return n; };
     const ins = db.prepare('INSERT INTO channels(key,kind,auto_name,number,enabled,item_count) VALUES(?,?,?,?,1,0)');
-    const upd = db.prepare('UPDATE channels SET auto_name=?, item_count=? WHERE id=?');
+    const upd = db.prepare('UPDATE channels SET auto_name=?, item_count=?, kind=? WHERE id=?'); // kind too: a group of films and shows is TV, whatever its first library was
     db.exec('DELETE FROM channel_items');
     const link = db.prepare('INSERT OR IGNORE INTO channel_items(channel_id,item_id) VALUES(?,?)');
 
@@ -249,10 +249,10 @@ export function inferChannels(db) {
         taken.add(num);
         ch = { id: Number(ins.run(key, c.kind, c.name, num).lastInsertRowid) };
       }
-      upd.run(c.name, c.ids.size, ch.id);
+      upd.run(c.name, c.ids.size, c.kind, ch.id);
       for (const id of c.ids) link.run(ch.id, id);
     }
-    for (const [key, ch] of existing) if (!assign.has(key) && !key.startsWith('live:')) upd.run(ch.auto_name, 0, ch.id); // emptied channels (live ones: syncLiveChannels)
+    for (const [key, ch] of existing) if (!assign.has(key) && !key.startsWith('live:')) upd.run(ch.auto_name, 0, ch.kind, ch.id); // emptied channels (live ones: syncLiveChannels)
   });
 }
 
