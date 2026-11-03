@@ -182,12 +182,19 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 ## Setup guide
 
 <p align="center">
-  <img src="Images/Screenshots/web-setup-libraries.jpg" alt="Libraries" width="48%">
-  <img src="Images/Screenshots/web-setup-channels.jpg" alt="Channels" width="48%">
+  <img src="Images/Screenshots/web-setup-libraries.jpg" alt="Libraries: point WBTV at your folders" width="48%">
+  <img src="Images/Screenshots/web-setup-channels.jpg" alt="Channels: everything that was built for you, ready to rename" width="48%">
 </p>
 <p align="center">
-  <img src="Images/Screenshots/web-setup-ads.jpg" alt="Ads" width="48%">
-  <img src="Images/Screenshots/web-setup-announcements.jpg" alt="Announcements" width="48%">
+  <img src="Images/Screenshots/web-setup-livetv.jpg" alt="Live TV: playlists, streams and YouTube live" width="48%">
+  <img src="Images/Screenshots/web-setup-ads.jpg" alt="Ads: break timing, folders and links" width="48%">
+</p>
+<p align="center">
+  <img src="Images/Screenshots/web-setup-announcements.jpg" alt="Announcements: voices and what gets read out" width="48%">
+  <img src="Images/Screenshots/web-setup-settings.jpg" alt="Settings: scanning, smart scheduling and presentation" width="48%">
+</p>
+<p align="center">
+  <img src="Images/Screenshots/web-setup-appearance.jpg" alt="Appearance: nine themes" width="48%">
 </p>
 
 1. **Libraries**: add a folder and say what's in it: *TV Shows*, *Movies*, *Music videos*, *Radio* (and the spoken-word types) feed channels; *Ads* folders feed ad breaks.
