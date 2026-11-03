@@ -387,16 +387,40 @@ function libTable(libs, reload, poll) {
   if (!libs.length) return h('p', { class: 'note' }, 'None yet.');
   return h('table', {},
     h('tr', {}, ['Name', 'Path', 'Type', 'Items', ''].map((t) => h('th', {}, t))),
-    libs.map((l) => h('tr', {}, h('td', {}, l.name), h('td', { style: 'word-break:break-all' }, l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
+    libs.map((l) => h('tr', {}, h('td', {}, l.name), h('td', { style: 'word-break:break-all' }, l.path.startsWith('ms://') ? 'Media server library' : l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
       h('td', {}, String(isAdsLib(l) ? l.ads : l.type === 'iptv' ? '' : l.items)),
       h('td', {}, h('button', { class: 'sm', onclick: async () => { await api('/api/scan', { method: 'POST', body: { libraryId: l.id } }); poll(); } }, 'Scan'), ' ',
         h('button', { class: 'sm danger', onclick: async () => { if (confirm(`Remove "${l.name}" from WBTV? (files are not touched)`)) { await api(`/api/libraries/${l.id}`, { method: 'DELETE' }); reload(); } } }, 'Remove')))));
+}
+
+/** Read TV and films from a Jellyfin or Emby server instead of from folders. */
+function addMediaServerForm(onAdded) {
+  const url = h('input', { type: 'text', placeholder: 'Server address, e.g. 192.168.1.111:8096', style: 'flex:1;min-width:230px' });
+  const key = h('input', { type: 'password', placeholder: 'API key (Jellyfin: Dashboard > API Keys)', style: 'flex:1;min-width:230px', autocomplete: 'off' });
+  const out = h('div', {});
+  const connect = h('button', { onclick: async () => {
+    out.replaceChildren(h('div', { class: 'note' }, 'Connecting...'));
+    try {
+      const d = await api('/api/sources', { method: 'POST', body: { url: url.value, token: key.value } });
+      key.value = '';
+      out.replaceChildren(h('div', { class: 'note' }, `Connected to ${d.name} (${d.product} ${d.version}). Add the libraries you want:`),
+        d.views.length ? d.views.map((v) => h('div', { class: 'row2' }, h('span', { style: 'width:280px' }, `${v.name} (${v.type === 'tv' ? 'TV shows' : 'Movies'})`),
+          h('button', { onclick: async (e) => {
+            try { await api('/api/libraries', { method: 'POST', body: { sourceId: d.id, viewId: v.id, type: v.type, name: `${d.name}: ${v.name}` } }); e.target.disabled = true; e.target.textContent = 'Added'; onAdded(); }
+            catch (err) { e.target.textContent = err.message; }
+          } }, 'Add'))) : h('div', { class: 'note' }, 'That server has no TV or movie libraries.'));
+    } catch (e) { out.replaceChildren(h('div', { class: 'err' }, e.message)); }
+  } }, 'Connect');
+  return h('div', {}, h('div', { class: 'row2' }, url, key, connect), out);
 }
 
 async function tabLibraries(body) {
   const status = h('div', {});
   const list = h('div', {});
   body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks']),
+    h('h3', {}, 'Or read TV and films from Jellyfin / Emby'),
+    h('p', { class: 'note' }, 'WBTV reads titles, studios, genres and pictures through the server API and plays the original files from it, so the channels are built just like from folders. It needs an API key, which stays on the WBTV server.'),
+    addMediaServerForm(() => { reload(); poll(); }),
     h('p', { class: 'note' }, 'Music videos: video files with an Artist - Title name (or a <musicvideo> NFO). Radio: audio files; tags are read from the files. Both build themed channels automatically. Live TV and news streams are on the Live TV tab.'));
   const poll = () => scanStatus(status, reload);
   async function reload() {

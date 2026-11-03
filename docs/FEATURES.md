@@ -83,6 +83,14 @@ The complete feature list, by area. For what's new in each version see the [rele
 - YouTube live (including separate video and audio streams) is resolved with yt-dlp each time you tune in.
 - Large playlists start with the first 80 working channels enabled; enable more in bulk.
 
+## Jellyfin and Emby as a source
+
+- Setup > Libraries > *Read TV and films from Jellyfin / Emby*: enter the server address and an API key (Jellyfin: Dashboard > API Keys), then add the TV and movie libraries you want.
+- Titles, plots, studios, genres, ratings, cast and pictures come from the server, so channels are inferred exactly as from folders (a studio becomes a channel, a genre a themed one). Folder and server libraries can be mixed.
+- Playback reads the original files from the server over HTTP; the API key is kept on the WBTV server, is never put in an item path, and is hidden from logs.
+- If the server is down during a scan, nothing is removed. Pictures are downloaded a few hundred at a time per scan.
+- Not yet: Plex as a source, music/audiobooks from a server, and fetching subtitles through the server's own subtitle endpoint (embedded subtitles are extracted by reading the file).
+
 ## Works with your other apps
 
 - **HDHomeRun emulation**: add WBTV as a Live TV tuner in **Plex, Jellyfin and Emby**. The MPEG-TS stream is remuxed, not re-encoded.

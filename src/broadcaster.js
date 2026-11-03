@@ -9,6 +9,7 @@ import { getSettings } from './db.js';
 import { logoFile } from './logos.js';
 import { prepare as prepareNarration, cached as cachedNarration } from './tts.js';
 import { findLyrics, buildAss, fontFamily } from './lyrics.js';
+import { resolveMedia } from './mediaserver.js';
 import { select as selectStreams, subtitleFilter } from './streams.js';
 import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
@@ -28,6 +29,7 @@ let instances = 0; // every broadcaster gets its own folder, so a stopping one c
 const LEAD = 10;        // seconds of video we keep buffered ahead of the wall clock
 const WINDOW = 6;       // segments advertised in the live playlist
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const hideKeys = (s) => String(s).replace(/api_key=[^&\s'"]+/g, 'api_key=***'); // media-server stream URLs carry the API key: never write it to the logs
 
 /**
  * One Broadcaster per watched channel. It walks the persisted schedule in real time and
@@ -163,7 +165,7 @@ export class Broadcaster {
         dur = block.end - cursor;
         if (dur < 0.05) { cursor = block.end + 0.01; continue; }
         plan = {
-          file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start, content: block.kind === 'content' && ['episode', 'movie'].includes(block.item_kind),
+          file: resolveMedia(this.db, block.file), offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start, content: block.kind === 'content' && ['episode', 'movie'].includes(block.item_kind),
           meta: ['musicvideo', 'track', 'talk'].includes(block.item_kind)
             ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster, runtime: block.m_runtime, label: firstOf(block.m_genres) } : null,
         };
@@ -202,7 +204,7 @@ export class Broadcaster {
       if (this.stopped) return;
       // a piece that keeps dying after a second or two (damaged file) must not respawn ffmpeg in a tight loop: give up on it
       if (ok && produced < Math.min(dur - 1.2, 3)) this.shortRuns = (this.shortRuns || 0) + 1; else this.shortRuns = 0;
-      if (this.shortRuns >= 3) { this.shortRuns = 0; ok = false; console.error(`[ch${this.id}] a piece keeps failing, showing the test card instead: ${plan?.file || 'generated'}`); }
+      if (this.shortRuns >= 3) { this.shortRuns = 0; ok = false; console.error(`[ch${this.id}] a piece keeps failing, showing the test card instead: ${hideKeys(plan?.file || 'generated')}`); }
       if (ok) {
         cursor += produced >= dur - 1.2 ? dur : produced;
       } else {
@@ -228,7 +230,8 @@ export class Broadcaster {
       const rows = this.db.prepare(`SELECT i.path FROM blocks b JOIN items i ON i.id=b.item_id
         WHERE b.channel_id=? AND b.kind='content' AND i.kind IN ('episode','movie') AND b.end>? AND b.start<? ORDER BY b.start LIMIT 3`).all(this.id, cursor, cursor + 600);
       this.warmedFiles ||= new Set();
-      for (const { path: file } of rows) {
+      for (const { path: stored } of rows) {
+        const file = resolveMedia(this.db, stored);
         if (this.warmedFiles.has(file)) continue;
         this.warmedFiles.add(file);
         probeFile(file).then((info) => { if (info && !this.stopped) selectStreams(file, info, getSettings(this.db)); }).catch(() => {});
@@ -532,10 +535,10 @@ export class Broadcaster {
         run.ended = true;
         this.sync();
         this.streamTime += run.produced;
-        if (!run.produced) this.dlog(`run ${no} made no segments: ${cfg.ffmpeg} ${args.join(" ").slice(0, 1500)}`);
+        if (!run.produced) this.dlog(`run ${no} made no segments: ${hideKeys(`${cfg.ffmpeg} ${args.join(' ')}`).slice(0, 1500)}`);
         if (err.trim() && !this.stopped) {
-          console.error(`[ch${this.id}] ffmpeg: ${err.trim().split('\n').slice(-3).join(' | ')}`);
-          if (!run.produced) console.error(`[ch${this.id}] failed command: ${cfg.ffmpeg} ${args.join(' ').slice(0, 1800)}`); // so a broken piece can be reproduced by hand
+          console.error(`[ch${this.id}] ffmpeg: ${hideKeys(err.trim().split('\n').slice(-3).join(' | '))}`);
+          if (!run.produced) console.error(`[ch${this.id}] failed command: ${hideKeys(`${cfg.ffmpeg} ${args.join(' ')}`).slice(0, 1800)}`); // so a broken piece can be reproduced by hand
         }
         resolve(run.produced);
       });

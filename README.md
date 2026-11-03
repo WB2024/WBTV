@@ -150,6 +150,7 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 
 **Works with everything**
 - 🔌 **Tuner output**: HDHomeRun emulation, an **M3U playlist** and **XMLTV guide** for Plex, Jellyfin, Emby, TiviMate, VLC, Kodi and more
+- 🗄️ **Jellyfin and Emby as a source**: connect with an API key and WBTV builds channels from their libraries too (folders still work, and you can mix both)
 - 🌐 **Live TV**: add any M3U/M3U8 playlist, HLS stream, or YouTube live link
 - 📱 **Native Android TV / Fire TV app** (Kotlin, Compose, Media3) with a full on-TV settings screen
 - 🔒 **Optional password and access key**, and a documented [HTTP API](docs/API.md)
@@ -376,7 +377,8 @@ WBTV is young, maintained by one person, and developed on real hardware (a Proxm
 | CPU (x264) encoding, amd64 | ✅ The tested path |
 | Hardware encoding (VAAPI / NVENC) | 🟡 New. Self-test and fallback verified; not yet seen on a real GPU |
 | arm64 (Raspberry Pi 4/5) | 🟡 Built by CI; not yet run on real hardware |
-| Plex / Jellyfin / Emby as a *source* | ❌ WBTV reads your folders directly (it works as a *tuner* for them) |
+| Jellyfin / Emby as a *source* | ✅ Read TV and films through the server's API (Setup > Libraries), no shared folders needed. WBTV also works as a *tuner* for them |
+| Plex as a *source* | ❌ Not yet (Plex works as a *tuner* target today) |
 | Hand-built schedules / drag-and-drop channel editor | ❌ By design for now: channels are inferred. Overrides for names, numbers and on/off exist |
 | Subtitles and audio-track choice | ✅ Preferred-language audio, and subtitles burned into the picture when needed (text subtitles, from a file beside the video or inside it). Bitmap subtitles (PGS/DVD) are not supported yet |
 
@@ -386,7 +388,7 @@ If something misbehaves, please [open an issue](https://github.com/WB2024/WBTV/i
 
 **Does it change or move my files?** No. Media is mounted read-only. WBTV stores its own database, covers and downloaded ads in `/config`.
 
-**Do I need Plex or Jellyfin?** No. WBTV reads folders directly. It can also *feed* Plex/Jellyfin as a Live TV tuner if you want it there.
+**Do I need Plex or Jellyfin?** No. WBTV reads folders directly. It can also read a Jellyfin or Emby library through the server's API, and *feed* Plex, Jellyfin and Emby as a Live TV tuner.
 
 **Do I have to tag everything with `.nfo` files?** No, but tags make the channels much better. Kodi/Jellyfin/Sonarr/Radarr-style `.nfo` files are read (studio, genre, plot, cast, rating). Without them WBTV falls back to folder and file names.
 

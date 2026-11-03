@@ -6,6 +6,7 @@ import { cfg } from './config.js';
 import crypto from 'node:crypto';
 import { probe, probeTags, run } from './media.js';
 import { syncIptvLibrary } from './iptv.js';
+import { isRemote, scanMediaServer } from './mediaserver.js';
 
 const VIDEO = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.ts', '.m2ts', '.mpg', '.mpeg', '.flv', '.webm', '.divx', '.vob', '.ogm']);
 const EXTRA_FILE = /(^|[-_. ])(trailer|sample|featurette|behindthescenes|deleted|interview|clip)\.[^.]+$/i;
@@ -60,6 +61,7 @@ function pickArt(names, base, kind) {
 }
 
 export async function scanLibrary(db, lib, progress) {
+  if (isRemote(lib.path)) return scanMediaServer(db, lib, progress, { safeRemovals }); // a library that lives in Jellyfin / Emby
   if (lib.type.startsWith('ads')) return scanAdsLibrary(db, lib, progress);
   if (lib.type === 'iptv') return syncIptvLibrary(db, lib, progress);
   if (lib.type === 'radio' || TALK[lib.type]) return scanRadio(db, lib, progress);

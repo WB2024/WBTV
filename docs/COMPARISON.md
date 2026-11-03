@@ -35,7 +35,7 @@ WBTV is one of several projects that turn your media into live TV. They make dif
 | **Adverts matched to the era of the programme** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Themes (Freeview, Satellite, 90s, Aero, ...) | ✅ 9 | ❌ | ❌ | 🟡 | ✅ |
 | One-container Docker install | ✅ | ✅ | ✅ | ❌ | n/a |
-| Plex / Jellyfin / Emby as a source | ❌ | ✅ | ✅ | ❌ | ❌ |
+| Plex / Jellyfin / Emby as a source | 🟡 Jellyfin + Emby (Plex soon) | ✅ | ✅ | ❌ | ❌ |
 | **M3U + XMLTV output / HDHomeRun emulation** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Hardware transcoding | 🟡 VAAPI/NVENC, new | ✅ | ✅ | n/a | ❌ |
 | Hand-built schedules, dayparting, drag-and-drop editor | ❌ | ✅ | ✅ | ✅ | ❌ |
@@ -48,7 +48,7 @@ WBTV is one of several projects that turn your media into live TV. They make dif
 
 ## What is still missing
 
-Hand-built schedules and a drag-and-drop channel editor, Plex/Jellyfin/Emby as a source, bitmap subtitles and per-channel language settings, and an established community. Hardware encoding (VAAPI/NVENC) and the arm64 image are new and have had less real-world testing than the CPU/amd64 paths.
+Hand-built schedules and a drag-and-drop channel editor, Plex as a source, bitmap subtitles and per-channel language settings, and an established community. Hardware encoding (VAAPI/NVENC) and the arm64 image are new and have had less real-world testing than the CPU/amd64 paths.
 
 ## Notes
 

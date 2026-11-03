@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
   type TEXT NOT NULL, last_scan INTEGER
 );
+-- media servers (Jellyfin / Emby) whose libraries are read through their API; the key stays on the server
+CREATE TABLE IF NOT EXISTS sources (
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'jellyfin', name TEXT, url TEXT NOT NULL UNIQUE, token TEXT, user_id TEXT
+);
 CREATE TABLE IF NOT EXISTS shows (
   id INTEGER PRIMARY KEY, library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
   path TEXT NOT NULL UNIQUE, title TEXT, plot TEXT, year INTEGER, rating REAL, mpaa TEXT,
