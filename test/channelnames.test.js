@@ -6,7 +6,7 @@ import path from 'node:path';
 import { openDb, setSettings } from '../src/db.js';
 import { inferChannels } from '../src/channels.js';
 
-test('genres that share a themed name still get distinct channel names, and keep their numbers on a rebuild', () => {
+test('radio sub-genres fold into one station, which keeps its name and number on a rebuild', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wbtv-names-'));
   const db = openDb(dir);
   try {
@@ -20,10 +20,8 @@ test('genres that share a themed name still get distinct channel names, and keep
     const names = () => db.prepare("SELECT COALESCE(name_override,auto_name) n, number FROM channels WHERE item_count>0 ORDER BY number").all();
     const first = names();
     const radio = first.filter((c) => /Jazz/.test(c.n));
-    assert.equal(radio.length, 3);
-    assert.equal(new Set(radio.map((c) => c.n.toLowerCase())).size, 3, `names must be distinct: ${radio.map((c) => c.n).join(' | ')}`);
-    assert.ok(radio.some((c) => c.n === 'Jazz FM'), 'the plainest genre keeps the plain name');
-    assert.ok(radio.some((c) => c.n === 'Jazz FM (Acid Jazz)'));
+    assert.deepEqual(radio.map((c) => c.n), ['Jazz FM'], 'Jazz, Acid Jazz and Smooth Jazz are one station'); // radio sub-genres fold into their family
+    assert.equal(db.prepare("SELECT item_count FROM channels WHERE kind='radio' AND item_count>0").get().item_count, 9);
 
     inferChannels(db); // a rebuild changes neither names nor numbers
     assert.deepEqual(names(), first);

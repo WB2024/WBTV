@@ -68,6 +68,19 @@ function normStudio(raw) {
   return { norm: norm || s.toLowerCase(), name: s };
 }
 const normGenre = (g) => g.toLowerCase().trim();
+/** Sub-genres fold into their family (the same families that give the stations their names); anything unrecognised keeps its own name. */
+function radioFamily(g) {
+  const l = g.toLowerCase();
+  const hit = MUSIC_NAMES.find(([k]) => l === k || l.includes(k));
+  return hit ? hit[1].toLowerCase() : normGenre(g);
+}
+const TAGS = /\s*[\(\[-]\s*(\d{4}\s+)?(digital\s+)?(re-?master(ed)?|mono|stereo|deluxe|bonus track|single version|album version|radio edit)[^)\]]*[\)\]]?\s*$/i;
+/** artist + title with the "(2011 Remaster)" style tags removed, so one song on many releases gets one key. A live version or a remix stays distinct. */
+export function songKey(artist, title) {
+  const t = String(title || '').replace(TAGS, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const a = String(artist || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return t ? `${a}|${t}` : '';
+}
 
 // Well-known UK ordering, used to hand out channel numbers where the name matches.
 const PREFERRED_NUMBERS = [[/^bbc one$/i, 1], [/^bbc two$/i, 2], [/^itv1$/i, 3], [/^channel 4$/i, 4], [/^channel 5$/i, 5],
@@ -109,13 +122,18 @@ export function inferChannels(db) {
   const minSec = st.minChannelMinutes * 60;
 
   const rows = db.prepare(`
-    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.album, i.path, i.library_id, l.name AS lib_name, l.type AS lib_type, l.path AS lib_path, l.channel_group AS grp, l.group_mode AS gmode,
+    SELECT i.id, i.kind, i.title AS i_title, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.album, i.path, i.library_id, l.name AS lib_name, l.type AS lib_type, l.path AS lib_path, l.channel_group AS grp, l.group_mode AS gmode,
       s.studios AS s_studios, s.genres AS s_genres
-    FROM items i LEFT JOIN shows s ON s.id = i.show_id LEFT JOIN libraries l ON l.id = i.library_id WHERE i.runtime > 0`).all();
+    FROM items i LEFT JOIN shows s ON s.id = i.show_id LEFT JOIN libraries l ON l.id = i.library_id WHERE i.runtime > 0 AND (i.kind <> 'track' OR i.runtime BETWEEN 45 AND 900) ORDER BY i.year IS NULL, i.year, i.id`).all(); // radio: no clips of a few seconds, no hour-long mixes; the oldest release of a song comes first
 
   // A "unit" is a whole show (all its episodes stay together) or a single movie.
   const units = new Map();
+  const songs = new Set(); // the same song on several releases (album, single, greatest hits, remaster) is played once
   for (const r of rows) {
+    if (r.kind === 'track') {
+      const k = songKey(r.artist, r.i_title);
+      if (k) { if (songs.has(k)) continue; songs.add(k); }
+    }
     const solo = r.kind === 'movie' || r.kind === 'musicvideo' || r.kind === 'track' || r.kind === 'talk' || r.kind === 'clip';
     const key = solo ? `m${r.id}` : `s${r.show_id}`;
     const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : r.kind === 'talk' ? 'talk' : r.kind === 'clip' ? 'clip' : 'tv';
@@ -129,7 +147,7 @@ export function inferChannels(db) {
     const studios = [...JSON.parse(r.s_studios || '[]'), ...JSON.parse(r.studios || '[]')];
     const genres = [...JSON.parse(r.s_genres || '[]'), ...JSON.parse(r.genres || '[]')];
     for (const s of new Set(studios)) { const n = normStudio(s); if (!u.studios.has(n.norm)) u.studios.set(n.norm, n); }
-    for (const g of new Set(genres)) { const n = normGenre(g); if (n) u.genres.set(n, g); }
+    for (const g of new Set(genres)) { const n = u.kind === 'radio' ? radioFamily(g) : normGenre(g); if (n) u.genres.set(n, g); } // radio: Indie Rock, Hard Rock and Rock are one Rock station
   }
 
   // popularity of each tag (total seconds, and film counts for movie studios)
