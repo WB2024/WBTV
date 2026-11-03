@@ -156,6 +156,18 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 
 > The complete list of everything WBTV does is in **[docs/FEATURES.md](docs/FEATURES.md)**.
 
+<p align="center">
+  <img src="Images/Screenshots/coming-up-next.gif" alt="A programme with the channel name in the corner, then the UP NEXT announcement over a clip from the next programme" width="640"><br>
+  <sub>A programme with its channel bug, then the <b>"coming up next"</b> slot: a clip from the next programme under an UP NEXT caption, with a voice reading out what's on (generated locally, offline). The demo uses clips from the CC-licensed film <i>Big Buck Bunny</i> (&copy; Blender Foundation).</sub>
+</p>
+
+<table align="center">
+<tr>
+<td align="center"><img src="Images/Screenshots/pause-rewind.gif" alt="Pausing and rewinding live TV with the info banner" width="400"><br><sub><b>Pause and rewind live TV</b>, with a banner showing what's on, what's next and how far behind live you are</sub></td>
+<td align="center"><img src="Images/Screenshots/music-video.gif" alt="A music video with an Artist - Title lower-third" width="400"><br><sub><b>Music-video channels</b> with an Artist - Title lower-third on every track</sub></td>
+</tr>
+</table>
+
 <table align="center">
 <tr>
 <td align="center"><img src="Images/Screenshots/ident.gif" alt="A generated station ident: big channel number and name" width="330"><br><sub><b>Station idents</b>, generated for every channel</sub></td>
@@ -235,6 +247,11 @@ The HDHomeRun emulation serves a normal MPEG-TS stream without re-encoding, so i
 A native Kotlin / Jetpack Compose / Media3 app. It opens on your last channel, like switching a TV on, and is built for the remote. Download the APK from the
 [latest release](https://github.com/WB2024/WBTV/releases/latest) and install it (`adb install -r`, or use a "Downloader"-style app on Fire TV). On first launch it asks for your server address,
 e.g. `192.168.1.110:8420`. Needs Android 8 or newer; tested on a Fire TV (Android 9).
+
+<p align="center">
+  <img src="Images/Screenshots/tv-guide.gif" alt="The Android TV app: opening the guide with the remote and moving through channels and programmes" width="640"><br>
+  <sub>Recorded on a Fire TV: Right opens the guide; the d-pad then moves through channels and through time.</sub>
+</p>
 
 <p align="center">
   <img src="Images/Screenshots/tv-guide-classic.png" alt="Guide, Classic theme" width="48%">
@@ -407,6 +424,10 @@ WBTV is **free, open source and will stay that way**. It is built and tested in 
 </p>
 
 Not able to donate? A star on the repo and telling a friend helps just as much. ⭐
+
+## Credits
+
+The demo clips in this README use *Big Buck Bunny* (&copy; 2008 Blender Foundation, [bigbuckbunny.org](https://peach.blender.org), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)). The Android TV and guide recordings were made on a real library.
 
 ## Licence
 
