@@ -19,7 +19,8 @@
 <p align="center"><b>WBTV is free, open source and always will be. If it brings you joy, a coffee keeps the updates coming. ☕</b></p>
 
 <p align="center">
-  <img src="Images/Screenshots/web-guide-classic.jpg" alt="The WBTV guide: a Freeview-style grid built from your own library" width="900">
+  <img src="Images/Screenshots/guide-browse.gif" alt="The WBTV guide: a Freeview-style grid built from your own library, with filters for TV, Movies, Music, Radio, Live and Networks" width="900"><br>
+  <sub>The guide, browsing and filtering a real library: TV, Movies, Music, Radio, Live and Networks.</sub>
 </p>
 
 ---
@@ -155,6 +156,13 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 
 > The complete list of everything WBTV does is in **[docs/FEATURES.md](docs/FEATURES.md)**.
 
+<table align="center">
+<tr>
+<td align="center"><img src="Images/Screenshots/ident.gif" alt="A generated station ident: big channel number and name" width="330"><br><sub><b>Station idents</b>, generated for every channel</sub></td>
+<td align="center"><img src="Images/Screenshots/closedown.gif" alt="The overnight closedown test card" width="330"><br><sub><b>Closedown</b> test card, overnight</sub></td>
+</tr>
+</table>
+
 <p align="center">
   <img src="Images/Assets/11.png" alt="EPG style TV guide, your media your rules, classic ad breaks, self-hosted" width="700">
 </p>
@@ -267,6 +275,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Themes
 
 <p align="center">
+  <img src="Images/Screenshots/themes.gif" alt="WBTV cycling through its nine themes" width="800"><br>
+  <sub>Nine themes, switchable any time, on the web and on Android TV.</sub>
+</p>
+
+<details>
+<summary>See them all at once</summary>
+
+<p align="center">
   <img src="Images/Screenshots/web-guide-vintage.jpg" alt="Vintage" width="48%">
   <img src="Images/Screenshots/web-guide-90s.jpg" alt="90s" width="48%">
 </p>
@@ -282,6 +298,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   <img src="Images/Screenshots/web-guide-satellite.jpg" alt="Satellite (classic)" width="48%">
   <img src="Images/Screenshots/web-guide-satellite-hd.jpg" alt="Satellite HD" width="48%">
 </p>
+
+</details>
 
 ## Performance
 
