@@ -12,7 +12,7 @@ with the audio played over it is rejected). Needs: python 3.9+, yt-dlp (pip inst
   python mvdl.py artists [filter]           artists in your Navidrome, and how many videos you already have of each
   python mvdl.py list "Morrissey"           that artist's videos on MusicBrainz, marked have / missing
   python mvdl.py get  "Morrissey" [-n]      download the missing ones (-n = dry run; --all-artists to do every artist)
-  python mvdl.py url  <youtube-url> [--artist A --title T] [--force]     one specific video, same checks and layout
+  python mvdl.py url  <youtube-url | "Artist - Title"> [--force]     one video: a link, or words (searches "Artist - Title (official music video)")
 """
 import argparse, getpass, hashlib, json, os, re, secrets, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 from collections import Counter
@@ -142,7 +142,7 @@ def ytdlp(*a, **k):
 def candidates(artist, title, direct):
     """Metadata of possible uploads, best first: the MusicBrainz-linked video, then a YouTube search."""
     infos = []
-    for q in ([direct] if direct else []) + [f'ytsearch5:{artist} {title} official music video']:
+    for q in ([direct] if direct else []) + [f'ytsearch5:{artist} - {title} (official music video)']:
         r = ytdlp('-J', q)
         try: j = json.loads(r.stdout)
         except Exception: continue
@@ -252,6 +252,13 @@ def cmd_get(a):
 
 def cmd_url(a):
     c = conf(); need(c)
+    if not re.match(r'https?://', a.url):  # typed words, not a link: search for "Artist - Title (official music video)"
+        parts = re.split(r'\s+-\s+', a.url, maxsplit=1)
+        if len(parts) < 2 and not (a.artist and a.title): raise SystemExit('Type it as "Artist - Title", for example: Morrissey - Everyday Is Like Sunday')
+        artist, title = a.artist or parts[0].strip(), clean_title(a.title or parts[1].strip())
+        ar = find_artist(c, artist); artist = ar['name'] if ar['id'] else artist
+        if have_it(library_index(c['root']), artist, title) and not a.force: return print(f'Already in your library: {artist} - {title} (use --force to fetch it again)')
+        return fetch_one(c['root'], artist, title, '', nd_genre(c, ar['id']) if ar['id'] else [], None, force=a.force)
     r = ytdlp('-J', a.url)
     try: info = json.loads(r.stdout)
     except Exception: raise SystemExit('yt-dlp could not read that address')
@@ -263,7 +270,7 @@ def cmd_url(a):
 
 def main():
     p = argparse.ArgumentParser(prog='mvdl', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    s = p.add_subparsers(dest='cmd', required=True)
+    s = p.add_subparsers(dest='cmd')
     s.add_parser('setup').set_defaults(f=cmd_setup)
     q = s.add_parser('artists'); q.add_argument('filter', nargs='?'); q.set_defaults(f=cmd_artists)
     q = s.add_parser('list'); q.add_argument('artist'); q.set_defaults(f=cmd_list)
@@ -271,6 +278,7 @@ def main():
     q.add_argument('--all-artists', action='store_true'); q.add_argument('--limit', type=int, default=50); q.set_defaults(f=cmd_get)
     q = s.add_parser('url'); q.add_argument('url'); q.add_argument('--artist'); q.add_argument('--title'); q.add_argument('--force', action='store_true'); q.set_defaults(f=cmd_url)
     a = p.parse_args()
+    if not a.cmd: p.print_help(); return
     if a.cmd == 'get' and not (a.artist or a.all_artists): p.error('give an artist, or --all-artists')
     a.f(a)
 
