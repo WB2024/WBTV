@@ -12,6 +12,7 @@ with the audio played over it is rejected). Needs: python 3.9+, yt-dlp (pip inst
   python mvdl.py artists [filter]           artists in your Navidrome, and how many videos you already have of each
   python mvdl.py list "Morrissey"           that artist's videos on MusicBrainz, marked have / missing
   python mvdl.py get  "Morrissey" [-n]      download the missing ones (-n = dry run; --all-artists to do every artist)
+  python mvdl.py top [20] [-n]              your 20 biggest artists (most songs in Navidrome): download all their missing videos
   python mvdl.py url  <youtube-url | "Artist - Title"> [--force]     one video: a link, or words (searches "Artist - Title (official music video)")
 """
 import argparse, getpass, hashlib, json, os, re, secrets, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -238,9 +239,18 @@ def cmd_list(a):
     for v in vids: print(('have    ' if have_it(have, ar['name'], v['title']) else 'MISSING ') + f"{v['title']}  {v['year']}")
     print(f"{len(vids)} videos listed, {sum(not have_it(have, ar['name'], v['title']) for v in vids)} missing")
 
+def cmd_top(a):
+    c = conf(); need(c)
+    arts = sorted((z for z in nd_artists(c) if not re.fullmatch(r'various artists?|va|unknown artist|soundtracks?|original soundtrack', z['name'].strip(), re.I)), key=lambda z: -z.get('albumCount', 0))[:max(a.count * 3, 30)]  # the song count needs a lookup each, so only the likeliest
+    for ar in arts: ar['songs'] = sum(al.get('songCount', 0) for al in nd(c, 'getArtist', id=ar['id']).get('artist', {}).get('album', []))
+    arts = sorted(arts, key=lambda z: -z['songs'])[:a.count]
+    print('Top artists by song count: ' + ', '.join(f"{z['name']} ({z['songs']})" for z in arts))
+    a.artist, a.all_artists, a.arts = None, False, arts
+    cmd_get(a)
+
 def cmd_get(a):
     c = conf(); need(c); have = library_index(c['root'])
-    arts = nd_artists(c) if a.all_artists else [find_artist(c, a.artist)]
+    arts = getattr(a, 'arts', None) or (nd_artists(c) if a.all_artists else [find_artist(c, a.artist)])
     done = 0
     for ar in arts:
         vids = [v for v in artist_videos(c, ar) if not have_it(have, ar['name'], v['title'])]
@@ -276,6 +286,8 @@ def main():
     q = s.add_parser('list'); q.add_argument('artist'); q.set_defaults(f=cmd_list)
     q = s.add_parser('get'); q.add_argument('artist', nargs='?'); q.add_argument('-n', action='store_true', help='dry run')
     q.add_argument('--all-artists', action='store_true'); q.add_argument('--limit', type=int, default=50); q.set_defaults(f=cmd_get)
+    q = s.add_parser('top', help='download missing videos for your top artists by song count'); q.add_argument('count', nargs='?', type=int, default=20)
+    q.add_argument('-n', action='store_true', help='dry run'); q.add_argument('--limit', type=int, default=50); q.set_defaults(f=cmd_top)
     q = s.add_parser('url'); q.add_argument('url'); q.add_argument('--artist'); q.add_argument('--title'); q.add_argument('--force', action='store_true'); q.set_defaults(f=cmd_url)
     a = p.parse_args()
     if not a.cmd: p.print_help(); return
