@@ -15,7 +15,7 @@ The complete feature list, by area. For what's new in each version see the [rele
 - Duplicate station names are disambiguated automatically.
 - **Edit anything**: rename, renumber, switch channels on and off, upload a logo. Your edits survive rescans.
 - Minimum channel size, genre channels for every show, movie studio/decade channels and the films needed for a studio channel are all adjustable.
-- Channel search box, and *Enable shown* for bulk switching.
+- Channel search box, and *Enable shown* for bulk switching. Empty channels (their library was removed) are marked *empty* and can be removed with one click.
 
 ## The schedule
 
@@ -72,8 +72,8 @@ The complete feature list, by area. For what's new in each version see the [rele
   - Tags are read from the files; filenames like `01 - Artist - Title.flac` are understood when tags are missing. Junk dates (e.g. `0001-01-01`) are ignored in favour of the real year or a `[1985]` folder name.
 - **Spoken-word stations** (library types *Radio: interviews / podcasts / audiobooks*):
   - **Interviews**: shuffled.
-  - **Podcasts**: rotate between shows, each show's episodes oldest first.
-  - **Audiobooks**: one book at a time, chapters in order, then the next book. **`.m4b` supported**, including embedded cover art.
+  - **Podcasts**: one channel per show by default, episodes oldest first, looping. Or one station that rotates between shows.
+  - **Audiobooks**: one station playing one book at a time, chapters in order, then the next book. Or, with *one channel per show / book* ticked (Setup > Libraries), a channel per book that always plays in order and loops. **`.m4b` supported**, including embedded cover art.
   - Show/book, author, date, track number and description come from the tags, with folder names as the fallback.
 
 ## Live TV and IPTV

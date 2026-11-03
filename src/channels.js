@@ -82,12 +82,18 @@ const PREFERRED_NUMBERS = [[/^bbc one$/i, 1], [/^bbc two$/i, 2], [/^itv1$/i, 3],
  *  Movies: genre channels, plus (optionally) studio channels and decade channels.
  *  Anything left over lands in a catch-all channel.
  */
+/** Spoken-word libraries: one channel per show / book (true), or one station for the whole library (false). Podcasts default to per show. */
+export function talkPerTitle(db, libId, libType) {
+  const v = db.prepare('SELECT value FROM settings WHERE key=?').get(`talk_per_title_${libId}`)?.value;
+  return v === '1' ? true : v === '0' ? false : libType === 'talk_podcasts';
+}
+
 export function inferChannels(db) {
   const st = getSettings(db);
   const minSec = st.minChannelMinutes * 60;
 
   const rows = db.prepare(`
-    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.library_id, l.name AS lib_name, l.type AS lib_type,
+    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.album, i.library_id, l.name AS lib_name, l.type AS lib_type,
       s.studios AS s_studios, s.genres AS s_genres
     FROM items i LEFT JOIN shows s ON s.id = i.show_id LEFT JOIN libraries l ON l.id = i.library_id WHERE i.runtime > 0`).all();
 
@@ -99,7 +105,7 @@ export function inferChannels(db) {
     const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : r.kind === 'talk' ? 'talk' : 'tv';
     let u = units.get(key);
     if (!u) {
-      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map(), lib: r.library_id, libName: r.lib_name, libType: r.lib_type };
+      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map(), lib: r.library_id, libName: r.lib_name, libType: r.lib_type, album: r.album };
       units.set(key, u);
     }
     u.ids.push(r.id); u.seconds += r.runtime;
@@ -135,7 +141,10 @@ export function inferChannels(db) {
   for (const u of units.values()) {
     let placed = false;
     if (u.kind === 'talk') {
-      // one station per spoken-word library (interviews, podcasts, audiobooks), named after the library
+      // one channel per show / book when the library is set that way (the default for podcasts), always playing in order and looping;
+      // otherwise one station per spoken-word library, named after the library
+      const title = String(u.album || '').trim();
+      if (title && talkPerTitle(db, u.lib, u.libType)) { put(`radio:talk:${u.lib}:${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60)}`, 'radio', title, u.ids); continue; }
       put(`radio:talk:${u.lib}`, 'radio', (u.libName || '').trim() || TALK[u.libType]?.channel || 'Talk Radio', u.ids);
       continue;
     }

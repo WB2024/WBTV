@@ -218,8 +218,8 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 | Music video folder | **Music videos** | Channels by genre/decade, numbered from 400, lower-third per track |
 | Audio folder (mp3/flac/m4a...) | **Radio** | Stations by genre/decade, numbered from 800, cover art, lyrics and a live waveform |
 | Interview recordings | **Radio: interviews** | One station named after the library, shuffled |
-| Podcast folders (one folder per show) | **Radio: podcasts** | One station that rotates between shows; each show's episodes play oldest first |
-| Audiobooks (`.m4b`, or a folder of chapter files per book) | **Radio: audiobooks** | One station: one book at a time, chapters in order, then the next book |
+| Podcast folders (one folder per show) | **Radio: podcasts** | **One channel per show**, episodes oldest first, looping (or switch the library to one station that rotates between shows) |
+| Audiobooks (`.m4b`, or a folder of chapter files per book) | **Radio: audiobooks** | One station: one book at a time, chapters in order, then the next book. Tick *one channel per show / book* in Setup > Libraries for a channel per book that always plays in order and loops |
 | `.m3u` / `.m3u8` playlist, single stream, or YouTube live URL | **Live TV** tab | One channel per stream, numbered from 600; dead streams hidden |
 
 **Lyrics:** put a `.lrc` (time-synced), `.srt` or `.txt` file next to a track with the same name (`01 - Song.flac` + `01 - Song.lrc`), or keep them in the file tags, and they appear under the cover art. Synced lyrics follow the song; plain text is paged across it as an estimate. Switch it off in Setup > Settings.

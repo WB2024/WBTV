@@ -387,7 +387,7 @@ function libTable(libs, reload, poll) {
   if (!libs.length) return h('p', { class: 'note' }, 'None yet.');
   return h('table', {},
     h('tr', {}, ['Name', 'Path', 'Type', 'Items', ''].map((t) => h('th', {}, t))),
-    libs.map((l) => h('tr', {}, h('td', {}, l.name), h('td', { style: 'word-break:break-all' }, l.path.startsWith('ms://') ? 'Media server library' : l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
+    libs.map((l) => h('tr', {}, h('td', {}, l.name, l.perTitle !== undefined ? h('div', { class: 'note' }, h('label', { title: 'Each show or book gets its own channel, always playing in order and looping. Off: one station for the whole library.' }, h('input', { type: 'checkbox', checked: !!l.perTitle, onchange: async (e) => { await api(`/api/libraries/${l.id}`, { method: 'PATCH', body: { perTitle: e.target.checked } }).catch((er) => alert(er.message)); reload(); } }), ' one channel per show / book')) : null), h('td', { style: 'word-break:break-all' }, l.path.startsWith('ms://') ? 'Media server library' : l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
       h('td', {}, String(isAdsLib(l) ? l.ads : l.type === 'iptv' ? '' : l.items)),
       h('td', {}, h('button', { class: 'sm', onclick: async () => { await api('/api/scan', { method: 'POST', body: { libraryId: l.id } }); poll(); } }, 'Scan'), ' ',
         h('button', { class: 'sm danger', onclick: async () => { if (confirm(`Remove "${l.name}" from WBTV? (files are not touched)`)) { await api(`/api/libraries/${l.id}`, { method: 'DELETE' }); reload(); } } }, 'Remove')))));
@@ -530,10 +530,11 @@ async function tabChannels(body) {
     return h('tr', { class: 'chrow', 'data-n': `${c.name} ${c.number} ${c.key}`.toLowerCase(), 'data-id': c.id, 'data-items': c.item_count, style: c.item_count ? '' : 'opacity:.45' },
       h('td', {}, h('input', { type: 'number', value: c.number ?? '', min: 1, onchange: (e) => patch({ number: Number(e.target.value) }) })),
       h('td', {}, h('input', { type: 'text', value: c.name, style: 'width:100%', onchange: (e) => patch({ name: e.target.value === c.auto_name ? '' : e.target.value }) })),
-      h('td', {}, ({ movie: 'Movies', music: 'Music', radio: 'Radio', live: 'Live' }[c.kind] || 'TV')), h('td', {}, c.kind === 'live' ? (c.item_count ? 'on air' : 'dead') : String(c.item_count)),
+      h('td', {}, ({ movie: 'Movies', music: 'Music', radio: 'Radio', live: 'Live' }[c.kind] || 'TV')), h('td', { title: c.item_count || c.kind === 'live' ? '' : 'Nothing is in this channel: its library was removed or no longer has matching content. It stays here so your name and number come back if it returns.' }, c.kind === 'live' ? (c.item_count ? 'on air' : 'dead') : c.item_count ? String(c.item_count) : 'empty'),
       h('td', { class: 'note' }, c.key.replace(/^(tv|movie):/, '')),
       h('td', {}, h('input', { type: 'checkbox', checked: !!c.enabled, onchange: (e) => patch({ enabled: e.target.checked }) })),
-      h('td', {}, logoCell(c)));
+      h('td', {}, logoCell(c)),
+      h('td', {}, !c.item_count && c.kind !== 'live' ? h('button', { class: 'sm danger', title: 'Remove this empty channel', onclick: async () => { await api(`/api/channels/${c.id}`, { method: 'DELETE' }).catch((e) => alert(e.message)); renderSetup(); } }, '✕') : ''));
   });
   const q = h('input', { type: 'text', placeholder: 'Search channels…', style: 'min-width:220px' });
   const apply = () => { const t = q.value.toLowerCase(); for (const r of document.querySelectorAll('.chrow')) r.style.display = !t || r.dataset.n.includes(t) ? '' : 'none'; };

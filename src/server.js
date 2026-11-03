@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { cfg } from './config.js';
 import { openDb, getSettings, setSettings } from './db.js';
 import { scanLibrary } from './scanner.js';
-import { inferChannels, syncLiveChannels } from './channels.js';
+import { inferChannels, syncLiveChannels, talkPerTitle } from './channels.js';
 import { checkStreams, isUrl } from './iptv.js';
 import { discover, forgetSource, normalizeUrl } from './mediaserver.js';
 import { subsonicDiscover } from './navidrome.js';
@@ -84,7 +84,8 @@ async function runScan(libraryIds, auto = false) {
 // ---------------------------------------------------------------- libraries
 app.get('/api/libraries', () => db.prepare(`
   SELECT l.*, (SELECT COUNT(*) FROM items i WHERE i.library_id=l.id) AS items,
-         (SELECT COUNT(*) FROM ads a WHERE a.library_id=l.id) AS ads FROM libraries l ORDER BY l.id`).all());
+         (SELECT COUNT(*) FROM ads a WHERE a.library_id=l.id) AS ads FROM libraries l ORDER BY l.id`).all()
+  .map((l) => (String(l.type).startsWith('talk_') ? { ...l, perTitle: talkPerTitle(db, l.id, l.type) } : l)));
 
 // ---- media servers (Jellyfin / Emby) as a source of TV and films
 const isNavidrome = (b) => b?.kind === 'navidrome';
@@ -148,6 +149,7 @@ app.post('/api/libraries', async (req, reply) => {
   try {
     const r = db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run(name || label, real, type);
     const id = Number(r.lastInsertRowid);
+    console.log(`[libraries] added library ${id} "${name || label}" (${type}, ${real})`);
     runScan([id]); // fire and forget
     return { id };
   } catch (e) {
@@ -157,7 +159,20 @@ app.post('/api/libraries', async (req, reply) => {
   }
 });
 
+// choose how a spoken-word library becomes channels: one per show / book, or one station for the whole library
+app.patch('/api/libraries/:id', async (req, reply) => {
+  const lib = db.prepare('SELECT id, type FROM libraries WHERE id=?').get(req.params.id);
+  if (!lib || !String(lib.type).startsWith('talk_')) return reply.code(400).send({ error: 'only podcast, audiobook and interview libraries have this option' });
+  if (req.body?.perTitle !== undefined) {
+    db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(`talk_per_title_${lib.id}`, req.body.perTitle ? '1' : '0');
+    inferChannels(db); await rescheduleFuture(db);
+  }
+  return { ok: true };
+});
+
 app.delete('/api/libraries/:id', async (req) => {
+  const gone = db.prepare('SELECT name, path, type FROM libraries WHERE id=?').get(req.params.id);
+  console.log(`[libraries] removing library ${req.params.id}${gone ? ` "${gone.name}" (${gone.type}, ${gone.path.replace(/api_key=[^&]+/, 'api_key=***')})` : ' (not found)'}`); // so a removal is never a mystery
   db.prepare('DELETE FROM libraries WHERE id=?').run(req.params.id);
   inferChannels(db);
   syncLiveChannels(db); await rescheduleFuture(db);
@@ -211,6 +226,19 @@ app.put('/api/channels/:id/logo', async (req, reply) => {
   return { ok: true };
 });
 app.delete('/api/channels/:id/logo', async (req) => { removeLogo(req.params.id); return { ok: true }; });
+
+// a channel with nothing in it (its library was removed, or a tag was changed) can be deleted; one with content cannot, it would just be rebuilt
+app.delete('/api/channels/:id', async (req, reply) => {
+  const c = db.prepare('SELECT id, kind, item_count FROM channels WHERE id=?').get(req.params.id);
+  if (!c) return reply.code(404).send({ error: 'no such channel' });
+  if (c.item_count > 0 || c.kind === 'live') return reply.code(400).send({ error: 'only empty channels can be removed' });
+  db.prepare('DELETE FROM channels WHERE id=?').run(c.id);
+  return { ok: true };
+});
+app.delete('/api/channels', async () => { // every empty (non-live) channel
+  const r = db.prepare("DELETE FROM channels WHERE item_count=0 AND kind<>'live'").run();
+  return { removed: Number(r.changes) };
+});
 
 app.patch('/api/channels/:id', async (req) => {
   const { name, number, enabled } = req.body || {};
