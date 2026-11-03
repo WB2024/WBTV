@@ -307,7 +307,7 @@ e.g. `192.168.1.110:8420`. Needs Android 8 or newer; tested on a Fire TV (Androi
 
 | Key | Watching | In the guide |
 |---|---|---|
-| Up / Down, CH+ / CH- | next / previous channel | move between channels; Up from the top row goes to the filter chips and **Settings** |
+| Up / Down, CH+ / CH- | next / previous channel | move between channels; Up from the top row goes to the filter chips and **Settings**. **Rewind / Fast-forward** step through the filter chips from anywhere |
 | Left | last channel | previous programme |
 | Right / OK / Guide | open the guide | next programme / tune it |
 | Info | info banner (progress, minutes left) | |

@@ -65,7 +65,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     var settingsNote by mutableStateOf<String?>(null)
 
     /** Chips that have at least one channel (All is always there), so the row never overflows the screen. */
-    val visibleFilters: List<ChannelFilter> get() = ChannelFilter.entries.filter { it == ChannelFilter.ALL || it == filter || allChannels.any(it.test) }
+    val visibleFilters: List<ChannelFilter> get() = ChannelFilter.entries.filter { it == ChannelFilter.ALL || it == filter || allChannels.any(it.test) } +
+        allChannels.mapNotNull { it.grp }.distinct().sorted().map { ChannelFilter.group(it) }
 
     val spanSec get() = SPAN_MIN * 60.0
     private var nav = GuideNav(emptyList(), emptyMap())
@@ -384,6 +385,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 if (up.ch == sel.ch) { zone = Zone.TOOLBAR; toolbarIdx = visibleFilters.indexOf(filter).coerceAtLeast(0) } else setSel(up, false)
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> setSel(nav.down(sel, now), false)
+            // rewind / fast-forward step through the filter chips from anywhere in the guide (no need to climb to the top row)
+            KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                val list = visibleFilters
+                val i = list.indexOf(filter).coerceAtLeast(0)
+                applyFilter(list[(i + (if (code == KeyEvent.KEYCODE_MEDIA_REWIND) -1 else 1) + list.size) % list.size])
+            }
             KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> setSel(nav.vertical(sel, -PAGE, now), false)
             KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> setSel(nav.vertical(sel, PAGE, now), false)
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {

@@ -24,6 +24,7 @@ class ChannelFilterTest {
 
     @Test fun savedIdsMapBackAndUnknownFallsBackToAll() {
         for (f in ChannelFilter.entries) assertEquals(f, ChannelFilter.byId(f.id))
+        assertEquals(ChannelFilter.group("Stand Up"), ChannelFilter.byId("g:Stand Up"))
         assertEquals(ChannelFilter.ALL, ChannelFilter.byId("nonsense"))
     }
 }
