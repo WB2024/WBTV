@@ -145,7 +145,7 @@ export function inferChannels(db) {
       units.set(key, u);
     }
     u.ids.push(r.id); u.seconds += r.runtime;
-    if (r.grp && String(r.grp).trim()) idGrp.set(r.id, String(r.grp).trim());
+    if (r.grp && String(r.grp).trim() && (r.kind === 'clip' || r.gmode === 'single' || r.gmode === 'both')) idGrp.set(r.id, String(r.grp).trim()); // only a real channel group makes a chip; a label on an ordinary library does not
     const studios = [...JSON.parse(r.s_studios || '[]'), ...JSON.parse(r.studios || '[]')];
     const genres = [...JSON.parse(r.s_genres || '[]'), ...JSON.parse(r.genres || '[]')];
     for (const s of new Set(studios)) { const n = normStudio(s); if (!u.studios.has(n.norm)) u.studios.set(n.norm, n); }
