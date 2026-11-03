@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { cfg } from './config.js';
 import { norm, fileSafe, buildLibraryIndex } from '../tools/mvlib.mjs';
 import { nfoXml } from '../tools/mvfix.mjs';
+import { judgeUpload, looksStill } from './stillcheck.js';
 
 const BASE = process.env.IMVDB_BASE || 'https://imvdb.com/api/v1';
 const UA = 'WBTV (+https://github.com/WB2024/WBTV)';
@@ -98,6 +99,18 @@ export function libraryArtists(db, q = '', limit = 400) {
 // ---- the download queue ----------------------------------------------------------------------------------------------------------
 const cp = (from, to) => { try { const st = fs.statSync(from); fs.chownSync(to, st.uid, st.gid); fs.chmodSync(to, st.mode & 0o777); } catch { /* not allowed here: fine */ } };
 
+/** What YouTube / Vimeo say about an upload, without downloading it. */
+export function ytdlpInfo({ url }) {
+  return new Promise((resolve) => {
+    const p = spawn(cfg.ytdlp, ['-J', '--no-playlist', '--no-warnings', '--js-runtimes', 'node', url], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    p.stdout.on('data', (d) => { if (out.length < 4_000_000) out += d; });
+    const timer = setTimeout(() => p.kill('SIGKILL'), 60000);
+    p.on('error', () => { clearTimeout(timer); resolve({}); });
+    p.on('close', () => { clearTimeout(timer); try { resolve(JSON.parse(out)); } catch { resolve({}); } }); // no information: nothing to judge by, so do not reject
+  });
+}
+
 /** The real downloader: yt-dlp into a temp folder; returns the video and picture files. */
 export function ytdlpDownload({ url, dir }) {
   return new Promise((resolve, reject) => {
@@ -136,7 +149,7 @@ export function place({ root, artist, title, year, genres, imvdbId, director }, 
   return target;
 }
 
-export function registerImvdb(app, { db, authEnabled, runScan, download = ytdlpDownload, base = BASE, gapMs = 1500 }) {
+export function registerImvdb(app, { db, authEnabled, runScan, download = ytdlpDownload, info = ytdlpInfo, still = looksStill, base = BASE, gapMs = 1500 }) {
   const opt = { base };
   const ready = () => {
     const lib = musicLibrary(db);
@@ -185,7 +198,8 @@ export function registerImvdb(app, { db, authEnabled, runScan, download = ytdlpD
     return { queued };
   });
   app.get('/api/imvdb/jobs', () => db.prepare('SELECT id, imvdb_id, artist, title, year, status, error, updated FROM mv_jobs ORDER BY CASE status WHEN \'running\' THEN 0 WHEN \'queued\' THEN 1 ELSE 2 END, updated DESC LIMIT 300').all());
-  app.post('/api/imvdb/jobs/:id/retry', async (req) => { db.prepare("UPDATE mv_jobs SET status='queued', error=NULL, updated=? WHERE id=? AND status IN ('failed','cancelled')").run(now(), req.params.id); kick(); return { ok: true }; });
+  // retry; with { force: true } the download is kept even if it looked like a still image or a lyric / audio upload
+  app.post('/api/imvdb/jobs/:id/retry', async (req) => { db.prepare("UPDATE mv_jobs SET status='queued', error=NULL, force=?, updated=? WHERE id=? AND status IN ('failed','cancelled')").run(req.body?.force ? 1 : 0, now(), req.params.id); kick(); return { ok: true }; });
   app.post('/api/imvdb/jobs/:id/cancel', async (req) => { db.prepare("UPDATE mv_jobs SET status='cancelled', updated=? WHERE id=? AND status='queued'").run(now(), req.params.id); return { ok: true }; });
   app.delete('/api/imvdb/jobs', async () => ({ removed: Number(db.prepare("DELETE FROM mv_jobs WHERE status IN ('done','failed','cancelled')").run().changes) }));
 
@@ -208,7 +222,9 @@ export function registerImvdb(app, { db, authEnabled, runScan, download = ytdlpD
           if (!src) throw new Error('IMVDb lists no YouTube or Vimeo source for this video');
           const have = haveKeys(db);
           if (have.has(`${norm(job.artist)}|${slug(d.title || job.title)}`)) throw new Error('already in the library');
+          if (!job.force) { const why = judgeUpload(await info({ url: src.url })); if (why) throw new Error(`Not kept: ${why}`); }
           const files = await download({ url: src.url, dir: tmp });
+          if (!job.force) { const s = await still(files.video); if (s.still) throw new Error('Not kept: it looks like a still image with the audio played over it, not a music video'); }
           const genres = buildLibraryIndex(db.prepare("SELECT artist,title,year,genres FROM items WHERE kind='track' AND artist=?").all(job.artist).map((t) => ({ ...t, genres: JSON.parse(t.genres || '[]') }))).artist(job.artist)?.genres.slice(0, 1) || [];
           const out = place({ root: r.lib.path, artist: job.artist, title: d.title || job.title, year: d.year || job.year, genres, imvdbId: job.imvdb_id, director: d.director }, files);
           db.prepare("UPDATE mv_jobs SET status='done', file=?, error=NULL, updated=? WHERE id=?").run(path.relative(r.lib.path, out), now(), job.id);

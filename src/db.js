@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS sources (
 -- music videos queued for download from IMVDb (optional feature; see src/imvdb.js)
 CREATE TABLE IF NOT EXISTS mv_jobs (
   id INTEGER PRIMARY KEY, imvdb_id TEXT NOT NULL UNIQUE, artist TEXT NOT NULL, title TEXT, year INTEGER,
-  status TEXT NOT NULL DEFAULT 'queued', error TEXT, file TEXT, created INTEGER, updated INTEGER
+  status TEXT NOT NULL DEFAULT 'queued', error TEXT, file TEXT, created INTEGER, updated INTEGER, force INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS shows (
   id INTEGER PRIMARY KEY, library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
@@ -104,6 +104,7 @@ function migrate(db) {
   const lcols = db.prepare('PRAGMA table_info(libraries)').all().map((c) => c.name);
   if (!lcols.includes('channel_group')) db.exec('ALTER TABLE libraries ADD COLUMN channel_group TEXT');
   if (!lcols.includes('group_mode')) db.exec("ALTER TABLE libraries ADD COLUMN group_mode TEXT NOT NULL DEFAULT 'inferred'");
+  if (!db.prepare('PRAGMA table_info(mv_jobs)').all().some((c) => c.name === 'force')) db.exec('ALTER TABLE mv_jobs ADD COLUMN force INTEGER NOT NULL DEFAULT 0');
   if (!db.prepare('PRAGMA table_info(sources)').all().some((c) => c.name === 'salt')) db.exec('ALTER TABLE sources ADD COLUMN salt TEXT');
   // older DBs: ads.kind
   if (!db.prepare('PRAGMA table_info(ads)').all().some((c) => c.name === 'kind')) {

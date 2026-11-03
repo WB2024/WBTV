@@ -54,7 +54,7 @@ const setup = async ({ auth = true, writable = true, withKey = true } = {}) => {
     fs.writeFileSync(path.join(d, 'video.mp4'), 'VIDEO'); fs.writeFileSync(path.join(d, 'video.jpg'), 'PIC');
     return { video: path.join(d, 'video.mp4'), thumb: path.join(d, 'video.jpg') };
   };
-  const api = registerImvdb(app, { db, authEnabled: () => auth, runScan: () => { scans++; }, download, base, gapMs: 5 });
+  const api = registerImvdb(app, { db, authEnabled: () => auth, runScan: () => { scans++; }, download, info: async () => ({}), still: async () => ({ still: false }), base, gapMs: 5 });
   await app.ready();
   const get = async (url) => (await app.inject({ method: 'GET', url })).json();
   const send = async (method, url, payload) => { const r = await app.inject({ method, url, payload }); return { code: r.statusCode, body: r.json() }; };
@@ -142,4 +142,38 @@ test('a read-only music video folder is reported, not attempted', async () => {
   const a = await setup({ writable: false });
   const st = await a.get('/api/imvdb/status');
   assert.ok(st.problems.some((p) => /read-only/i.test(p)));
+});
+
+test('a download that is a still image with audio, or a lyric / audio upload, is not kept unless you say so', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wbtv-imvdb-'));
+  const mv = path.join(dir, 'Music Video');
+  fs.mkdirSync(mv, { recursive: true });
+  const db = openDb(path.join(dir, 'cfg'));
+  db.prepare("INSERT INTO libraries(name,path,type) VALUES('Music Video',?,'music')").run(mv);
+  db.prepare("INSERT INTO settings(key,value) VALUES('imvdb_key','goodkey')").run();
+  const app = Fastify();
+  let isStill = true, upload = {};
+  const download = async ({ dir: d }) => { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'video.mp4'), 'V'); return { video: path.join(d, 'video.mp4'), thumb: null }; };
+  registerImvdb(app, { db, authEnabled: () => true, runScan: () => {}, download, info: async () => upload, still: async () => ({ still: isStill }), base, gapMs: 5 });
+  await app.ready();
+  const get = async (u) => (await app.inject({ method: 'GET', url: u })).json();
+  const wait = async () => { for (let i = 0; i < 100; i++) { await new Promise((r) => setTimeout(r, 40)); if (!db.prepare("SELECT 1 FROM mv_jobs WHERE status IN ('queued','running')").get()) { await new Promise((r) => setTimeout(r, 100)); return; } } };
+  await app.inject({ method: 'POST', url: '/api/imvdb/jobs', payload: { artist: 'Morrissey', videos: [{ id: 11, title: 'Suedehead' }] } });
+  await wait();
+  let j = (await get('/api/imvdb/jobs'))[0];
+  assert.equal(j.status, 'failed');
+  assert.match(j.error, /^Not kept: it looks like a still image/);
+  assert.ok(!fs.existsSync(path.join(mv, 'Morrissey', 'Morrissey - Suedehead.mp4')));
+  // a lyric upload is stopped before it is even downloaded
+  isStill = false; upload = { title: 'Morrissey - Suedehead (Lyrics)' };
+  await app.inject({ method: 'POST', url: `/api/imvdb/jobs/${j.id}/retry`, payload: {} });
+  await wait();
+  j = (await get('/api/imvdb/jobs'))[0];
+  assert.match(j.error, /^Not kept: a lyric/);
+  // "keep anyway"
+  await app.inject({ method: 'POST', url: `/api/imvdb/jobs/${j.id}/retry`, payload: { force: true } });
+  await wait();
+  j = (await get('/api/imvdb/jobs'))[0];
+  assert.equal(j.status, 'done');
+  assert.ok(fs.existsSync(path.join(mv, 'Morrissey', 'Morrissey - Suedehead.mp4')));
 });
