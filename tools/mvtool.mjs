@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { plan, apply, undo } from './mvfix.mjs';
 import { parseName, plausibleYear, looksLikeDownloadYear, fileSafe, buildLibraryIndex, readNfo, norm } from './mvlib.mjs';
 
 const VIDEO = new Set(['.mp4', '.mkv', '.avi', '.m4v', '.mov', '.wmv', '.mpg', '.mpeg', '.flv', '.webm', '.vob', '.ts', '.divx']);
@@ -14,7 +15,7 @@ const SIDECAR = /^(.*?)(\.nfo|-poster\.(jpg|jpeg|png)|-thumb\.(jpg|jpeg|png)|-fa
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out); else if (e.isFile()) out.push(p);
+    if (e.isDirectory()) { if (!e.name.startsWith('.')) walk(p, out); } else if (e.isFile()) out.push(p); // hidden folders (.duplicates, .mvtool) are ours
   }
   return out;
 }
@@ -60,7 +61,10 @@ export function audit(root, { dbPath } = {}) {
     if (song?.genres?.length) { genres = song.genres.slice(0, 1); genreSource = 'your library (song)'; }
     else if (artistInfo?.genres?.length) { genres = artistInfo.genres.slice(0, 1); genreSource = 'your library (artist)'; }
     else if (nfo?.genres?.length) { genres = nfo.genres; genreSource = '.nfo'; }
+    // a folder whose artist your library does not know is left exactly as it is: guessing could split one artist over two folders
+    const skip = !!(lib && folder && !lib.artist(folder));
     if (lib && !artistInfo) issues.push('artist not in your library');
+    if (skip) issues.push('left alone (folder not in your library)');
     if (!genres.length) issues.push('no genre');
     if (!year) issues.push('no year');
 
@@ -71,12 +75,12 @@ export function audit(root, { dbPath } = {}) {
     if (renamed) issues.push(path.dirname(f) !== newDir ? 'move and rename' : 'rename');
     if (!nfo) issues.push('no .nfo');
     const sidecars = files.filter((x) => x !== f && path.dirname(x) === dir && x.startsWith(path.join(dir, base)) && SIDECAR.test(path.basename(x)) && SIDECAR.exec(path.basename(x))[1] === base).map((x) => path.basename(x));
-    rows.push({ file: rel.join('/'), artistFolder: folder, artist: parsed.artist, title: parsed.title, newPath: path.relative(root, target).split(path.sep).join('/'), renamed,
+    rows.push({ skip, abs: f, file: rel.join('/'), artistFolder: folder, artist: parsed.artist, title: parsed.title, newPath: path.relative(root, target).split(path.sep).join('/'), renamed,
       oldYear: rawYear, year, yearSource, genres, genreSource, hasNfo: !!nfo, locked: !!nfo?.locked, sidecars, issues, bytes: st.size });
   }
   // duplicates: the same song downloaded more than once
   const groups = new Map();
-  for (const r of rows) { const k = `${norm(r.artist)}|${norm(r.title)}`; (groups.get(k) || groups.set(k, []).get(k)).push(r); }
+  for (const r of rows) { const k = `${norm(r.artist)}|${r.title.toLowerCase().replace(/[^a-z0-9]+/g, '')}`; (groups.get(k) || groups.set(k, []).get(k)).push(r); }
   for (const g of groups.values()) if (g.length > 1) for (const r of g) r.issues.push(`duplicate of ${g.length - 1} other file(s)`);
   // two files that would end up with the same name
   const seen = new Map();
@@ -100,11 +104,27 @@ function summarise({ rows, libraryUsed }) {
 const csv = (rows) => ['file,new name,artist,title,old year,new year,year from,genre,genre from,issues', ...rows.map((r) => [r.file, r.newPath, r.artist, r.title, r.oldYear, r.year ?? '', r.yearSource, r.genres.join('; '), r.genreSource, r.issues.join('; ')]
   .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('mvtool.mjs')) {
+if (process.argv[1]?.endsWith('mvtool.mjs')) {
   const [cmd, dir, ...rest] = process.argv.slice(2);
   const opt = (k) => { const i = rest.indexOf(k); return i >= 0 ? rest[i + 1] : null; };
-  if (cmd !== 'audit' || !dir) { console.log('usage: node tools/mvtool.mjs audit <music video folder> [--db /config/wbtv.db] [--csv report.csv] [--json plan.json]'); process.exit(1); }
-  const result = audit(path.resolve(dir), { dbPath: opt('--db') });
-  console.log(JSON.stringify({ summary: summarise(result), rows: result.rows }));
-  if (opt('--csv')) fs.writeFileSync(opt('--csv'), csv(result.rows));
+  const usage = () => { console.log('usage:\n  node tools/mvtool.mjs audit <folder> [--db /config/wbtv.db] [--csv report.csv]   (read-only)\n  node tools/mvtool.mjs fix <folder> --db /config/wbtv.db [--apply]            (dry run unless --apply)\n  node tools/mvtool.mjs undo <undo.json>'); process.exit(1); };
+  if (cmd === 'audit' && dir) {
+    const result = audit(path.resolve(dir), { dbPath: opt('--db') });
+    console.log(JSON.stringify({ summary: summarise(result), rows: result.rows }));
+    if (opt('--csv')) fs.writeFileSync(opt('--csv'), csv(result.rows));
+  } else if (cmd === 'fix' && dir) {
+    const root = path.resolve(dir);
+    const result = audit(root, { dbPath: opt('--db') });
+    const p = plan(result.rows, root);
+    const rel = (f) => path.relative(root, f);
+    const by = (k) => p.moves.filter((m) => m.kind === k).length;
+    console.log(`${result.rows.length} videos: ${p.kept} kept, ${p.dups.length} extra copies of the same song`);
+    console.log(`${by('video')} video renames/moves, ${by('sidecar')} poster/nfo/subtitle files follow them, ${by('duplicate')} files go to ${path.basename(root)}/.duplicates, ${p.nfos.length} .nfo files written`);
+    for (const d of p.dups) console.log(`  duplicate: ${rel(d.r.abs)} (${d.q.height}p, ${Math.round(d.q.bitrate / 1000)} kb/s)  <-  keeping ${rel(d.of.abs)} (${d.bestQ.height}p, ${Math.round(d.bestQ.bitrate / 1000)} kb/s)`);
+    for (const m of p.moves.filter((x) => x.kind === 'video')) console.log(`  ${rel(m.from)}  ->  ${rel(m.to)}`);
+    if (rest.includes('--apply')) { const r = apply(p, root); console.log(`DONE: ${r.moved} moves, ${r.nfos} .nfo files written. Undo with:\n  node tools/mvtool.mjs undo "${r.logFile}"`); }
+    else console.log('\n(dry run: nothing was changed. Add --apply to do it.)');
+  } else if (cmd === 'undo' && dir) {
+    console.log(JSON.stringify(undo(path.resolve(dir))));
+  } else usage();
 }

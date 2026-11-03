@@ -239,6 +239,10 @@ Big playlists (more than 80 streams) start with the first 80 *working* channels 
 
 **Web keys:** arrows to browse, Enter to watch, 0-9 for a channel number, Space to pause, Left/Right to rewind or skip in fullscreen, L to go back to live, F for fullscreen, G or Esc for the guide, `[` and `]` for the filter chips.
 
+### Tidy your music videos (optional)
+
+Music videos from YouTube usually carry an upload date as their "year" and a messy file name, which gives you one or two dull channels. WBTV ships a small tool that renames them to `Artist - Title`, writes proper `.nfo` files with the real release year and genre (taken from your own music library), and sets duplicate copies aside. It is a dry run until you say `--apply`, and everything can be undone. See [tools/README.md](tools/README.md).
+
 ## Folders or a media server?
 
 WBTV can read your library two ways, and you can mix them. **Folders are the default and the best-tested route.** Reading from a media server is an option for when folders aren't practical. Neither is "better" in general, so here is an honest comparison to help you choose.

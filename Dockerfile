@@ -26,6 +26,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src ./src
 COPY public ./public
+COPY tools ./tools
 
 ENV NODE_ENV=production \
     PORT=8080 \
