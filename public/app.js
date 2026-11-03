@@ -33,10 +33,9 @@ let epgFrom = 0;
 // filter chips: which channels the guide lists
 const FILTERS = [
   ['all', 'All channels', () => true],
-  ['tv', 'TV', (c) => c.kind === 'tv'],
+  ['tv', 'TV', (c) => c.kind === 'tv' || c.kind === 'clips'], // clips and interviews are scheduled back to back, but they sit with TV
   ['movie', 'Movies', (c) => c.kind === 'movie'],
   ['music', 'Music', (c) => c.kind === 'music'],
-  ['clips', 'Clips', (c) => c.kind === 'clips'],
   ['radio', 'Radio', (c) => c.kind === 'radio'],
   ['live', 'Live', (c) => c.kind === 'live'],
   ['network', 'Networks', (c) => (c.key || '').startsWith('tv:studio:')],
@@ -612,7 +611,7 @@ async function tabChannels(body) {
     return h('tr', { class: 'chrow', 'data-n': `${c.name} ${c.number} ${c.key}`.toLowerCase(), 'data-id': c.id, 'data-items': c.item_count, style: c.item_count ? '' : 'opacity:.45' },
       h('td', {}, h('input', { type: 'number', value: c.number ?? '', min: 1, onchange: (e) => patch({ number: Number(e.target.value) }) })),
       h('td', {}, h('input', { type: 'text', value: c.name, style: 'width:100%', onchange: (e) => patch({ name: e.target.value === c.auto_name ? '' : e.target.value }) })),
-      h('td', {}, ({ movie: 'Movies', music: 'Music', clips: 'Clips', radio: 'Radio', live: 'Live' }[c.kind] || 'TV')), h('td', { title: c.item_count || c.kind === 'live' ? '' : 'Nothing is in this channel: its library was removed or no longer has matching content. It stays here so your name and number come back if it returns.' }, c.kind === 'live' ? (c.item_count ? 'on air' : 'dead') : c.item_count ? String(c.item_count) : 'empty'),
+      h('td', {}, ({ movie: 'Movies', music: 'Music', clips: 'TV', radio: 'Radio', live: 'Live' }[c.kind] || 'TV')), h('td', { title: c.item_count || c.kind === 'live' ? '' : 'Nothing is in this channel: its library was removed or no longer has matching content. It stays here so your name and number come back if it returns.' }, c.kind === 'live' ? (c.item_count ? 'on air' : 'dead') : c.item_count ? String(c.item_count) : 'empty'),
       h('td', { class: 'note' }, c.key.replace(/^(tv|movie):/, '')),
       h('td', {}, h('input', { type: 'checkbox', checked: !!c.enabled, onchange: (e) => patch({ enabled: e.target.checked }) })),
       h('td', {}, logoCell(c)),
