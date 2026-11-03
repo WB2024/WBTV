@@ -86,7 +86,7 @@ app.get('/api/libraries', () => db.prepare(`
 
 app.post('/api/libraries', async (req, reply) => {
   const { path: p, type, name } = req.body || {};
-  if (!['movies', 'tv', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks', 'iptv', 'ads', 'ads_tv', 'ads_movies'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
+  if (!['movies', 'tv', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks', 'iptv', 'ads', 'ads_tv', 'ads_movies', 'ads_idents'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
   let real;
   let label;
   if (type === 'iptv') {
@@ -341,7 +341,7 @@ app.put('/api/settings', async (req) => {
   const after = setSettings(db, body);
   if (before.hwEncoder !== after.hwEncoder) await detectHw(after.hwEncoder);
   if (before.streamHeight !== after.streamHeight) applyStreamSize(after.streamHeight);
-  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'lyrics', 'streamHeight']; // these never need a re-plan
+  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'lyrics', 'streamHeight', 'language', 'subtitleMode']; // these never need a re-plan
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {
     const inferKeys = ['minChannelMinutes', 'tvGenreChannelsForAll', 'movieStudioChannels', 'movieStudioMinFilms', 'movieDecadeChannels'];
@@ -420,6 +420,7 @@ app.get('/live/:id/index.m3u8', async (req, reply) => {
   while (!gone && ((b.ready < 2 && Date.now() - t0 < 9000) || (b.ready < 1 && Date.now() - t0 < 25000))) {
     await sleep(150);
     if (b.stopped) break;
+    b.touch(req.query.v); // still here, still waiting: a slow start (a busy server) must not let the idle timer stop the encoder that is starting for us
   }
   if (gone) {
     if (created && b.segs.length < 2) b.leave(req.query.v); // nobody is waiting for this channel any more: do not leave its encoder running

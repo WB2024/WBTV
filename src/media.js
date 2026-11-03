@@ -15,12 +15,14 @@ export function run(cmd, args, { timeout = 0 } = {}) {
 
 /** -> { duration, hasAudio } or null when the file is unreadable */
 export async function probe(file) {
-  const r = await run(cfg.ffprobe, ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type', '-of', 'json', file], { timeout: 30000 });
+  const r = await run(cfg.ffprobe, ['-v', 'error', '-show_entries', 'format=duration,size:stream=codec_type,codec_name:stream_tags=language,title:stream_disposition=default,forced', '-of', 'json', file], { timeout: 30000 });
   if (r.code !== 0) return null;
   try {
     const j = JSON.parse(r.out);
     const duration = parseFloat(j.format?.duration);
-    return { duration: Number.isFinite(duration) ? duration : 0, hasAudio: (j.streams || []).some((s) => s.codec_type === 'audio'), hasVideo: (j.streams || []).some((s) => s.codec_type === 'video') };
+    const st = j.streams || [];
+    const pick = (type, withCodec) => st.filter((s) => s.codec_type === type).map((s) => ({ lang: s.tags?.language || '', title: s.tags?.title || '', default: !!s.disposition?.default, forced: !!s.disposition?.forced, ...(withCodec ? { codec: s.codec_name } : {}) }));
+    return { duration: Number.isFinite(duration) ? duration : 0, size: Number(j.format?.size) || 0, hasAudio: st.some((s) => s.codec_type === 'audio'), hasVideo: st.some((s) => s.codec_type === 'video'), audio: pick('audio'), subs: pick('subtitle', true) };
   } catch { return null; }
 }
 

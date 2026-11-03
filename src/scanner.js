@@ -321,7 +321,7 @@ async function backfillCovers(db, lib, maxDirs = 400) {
 }
 
 async function scanAdsLibrary(db, lib, progress) {
-  const kind = { ads_tv: 'tv', ads_movies: 'movie' }[lib.type] || 'all';
+  const kind = { ads_tv: 'tv', ads_movies: 'movie', ads_idents: 'ident' }[lib.type] || 'all';
   db.prepare('UPDATE ads SET kind=? WHERE library_id=?').run(kind, lib.id);
   const files = [];
   const unreadable = [];

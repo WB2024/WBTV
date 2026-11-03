@@ -9,6 +9,7 @@ import { getSettings } from './db.js';
 import { logoFile } from './logos.js';
 import { prepare as prepareNarration, cached as cachedNarration } from './tts.js';
 import { findLyrics, buildAss, fontFamily } from './lyrics.js';
+import { select as selectStreams, subtitleFilter } from './streams.js';
 import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
 
@@ -69,7 +70,7 @@ export class Broadcaster {
     (kind === 'live' ? this.loopLive() : this.loop()).catch((e) => console.error(`[ch${this.id}] broadcaster crashed`, e));
     // The loop only looks ahead when a piece starts, and a programme can be one 40 minute piece: also look on the wall clock, so the
     // next announcement's voice-over is generated well before it airs.
-    this.warmTimer = setInterval(() => this.warmNarration(Date.now() / 1000 + LEAD), 15000);
+    this.warmTimer = setInterval(() => { this.warmNarration(Date.now() / 1000 + LEAD); this.warmStreams(Date.now() / 1000 + LEAD); }, 15000);
     this.reaper = setInterval(() => {
       const cut = Date.now() - 25000;
       for (const [v, t] of this.viewers) if (t < cut) this.viewers.delete(v);
@@ -87,7 +88,7 @@ export class Broadcaster {
 
   stop() {
     if (this.stopped) return;
-    this.dlog('stop');
+    this.dlog('stop', String(new Error().stack).split('\n').slice(2, 4).join(' <- ').replace(/\s+/g, ' '));
     this.stopped = true;
     clearInterval(this.reaper); clearInterval(this.warmTimer);
     try { this.proc?.kill('SIGKILL'); } catch { /* gone */ }
@@ -157,11 +158,12 @@ export class Broadcaster {
       const burst = Math.max(1, LEAD - (cursor - wall));
       let plan = null;
       this.warmNarration(cursor);
+      this.warmStreams(cursor);
       if (block && (block.kind !== 'ad' || block.file)) {
         dur = block.end - cursor;
         if (dur < 0.05) { cursor = block.end + 0.01; continue; }
         plan = {
-          file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start,
+          file: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start, content: block.kind === 'content' && ['episode', 'movie'].includes(block.item_kind),
           meta: ['musicvideo', 'track', 'talk'].includes(block.item_kind)
             ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster, runtime: block.m_runtime, label: firstOf(block.m_genres) } : null,
         };
@@ -173,7 +175,7 @@ export class Broadcaster {
         const fill = until ? this.pickFiller(dur) : null;
         if (fill) { plan = fill; dur = fill.dur; }
       }
-      if (block && (block.kind === 'signoff' || block.kind === 'ident')) {
+      if (block && (block.kind === 'signoff' || (block.kind === 'ident' && !block.file))) { // an ident block with a file is the user's own clip and plays like any other piece
         // generated pieces: the closedown test card, and the short station ident before a programme
         const signoff = block.kind === 'signoff';
         dur = signoff ? Math.min(dur, 300) : dur; // re-check the schedule every few minutes during closedown
@@ -192,7 +194,7 @@ export class Broadcaster {
             ? await this.runPromo(plan, dur, info.hasAudio, burst)
             : ['track', 'talk'].includes(plan.meta?.kind)
               ? await this.runAudio(plan, dur, burst)
-              : await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst, plan.meta);
+              : await this.runContent(plan.file, plan.offset, dur, info.hasAudio, burst, plan.meta, plan.content ? selectStreams(plan.file, info, getSettings(this.db)) : null);
           ok = produced > 0.5;
         }
       }
@@ -214,6 +216,24 @@ export class Broadcaster {
       const ahead = cursor - Date.now() / 1000 - LEAD - 2;
       if (ahead > 0) await sleep(ahead * 1000);
     }
+  }
+
+  /**
+   * Prepare subtitles for the next few programmes (extracting a text track from a big video can take a while), so they are
+   * already there when the programme airs. Best effort, never waits, never throws.
+   */
+  warmStreams(cursor) {
+    try {
+      if (getSettings(this.db).subtitleMode === 'off') return;
+      const rows = this.db.prepare(`SELECT i.path FROM blocks b JOIN items i ON i.id=b.item_id
+        WHERE b.channel_id=? AND b.kind='content' AND i.kind IN ('episode','movie') AND b.end>? AND b.start<? ORDER BY b.start LIMIT 3`).all(this.id, cursor, cursor + 600);
+      this.warmedFiles ||= new Set();
+      for (const { path: file } of rows) {
+        if (this.warmedFiles.has(file)) continue;
+        this.warmedFiles.add(file);
+        probeFile(file).then((info) => { if (info && !this.stopped) selectStreams(file, info, getSettings(this.db)); }).catch(() => {});
+      }
+    } catch { /* best effort */ }
   }
 
   /** Start synthesising the voice-over for an upcoming announcement so it is ready when it airs. */
@@ -321,9 +341,11 @@ export class Broadcaster {
     return fp(f);
   }
 
-  runContent(file, offset, dur, hasAudio, burst, meta) {
+  runContent(file, offset, dur, hasAudio, burst, meta, pick = null) {
     const e = this.encodeArgs();
     let vf = e.vf;
+    // preferred-language audio track, and subtitles burned in when the file has no audio in that language (see streams.js)
+    if (pick?.subs) vf += ',' + subtitleFilter(pick.subs, offset);
     // music video: "Artist - Title" lower-third for the first few seconds of each track
     if (meta?.kind === 'musicvideo' && fs.existsSync(cfg.fontFile) && offset < 6) {
       const { height: H } = cfg;
@@ -336,7 +358,7 @@ export class Broadcaster {
     const args = ['-hide_banner', '-loglevel', 'error', '-nostdin',
       '-ss', offset.toFixed(3), '-readrate', '1', '-readrate_initial_burst', burst.toFixed(1), '-i', file];
     if (!hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
-    args.push('-t', dur.toFixed(3), '-map', '0:v:0', '-map', hasAudio ? '0:a:0' : '1:a:0',
+    args.push('-t', dur.toFixed(3), '-map', '0:v:0', '-map', hasAudio ? `0:a:${pick?.audio || 0}` : '1:a:0',
       '-vf', this.withBug(vf, e.tail), '-af', 'aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo', ...e.codec);
     return this.runFfmpeg(args);
   }
@@ -510,6 +532,7 @@ export class Broadcaster {
         run.ended = true;
         this.sync();
         this.streamTime += run.produced;
+        if (!run.produced) this.dlog(`run ${no} made no segments: ${cfg.ffmpeg} ${args.join(" ").slice(0, 1500)}`);
         if (err.trim() && !this.stopped) {
           console.error(`[ch${this.id}] ffmpeg: ${err.trim().split('\n').slice(-3).join(' | ')}`);
           if (!run.produced) console.error(`[ch${this.id}] failed command: ${cfg.ffmpeg} ${args.join(' ').slice(0, 1800)}`); // so a broken piece can be reproduced by hand

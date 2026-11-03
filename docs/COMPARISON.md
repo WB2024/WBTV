@@ -40,15 +40,15 @@ WBTV is one of several projects that turn your media into live TV. They make dif
 | Hardware transcoding | 🟡 VAAPI/NVENC, new | ✅ | ✅ | n/a | ❌ |
 | Hand-built schedules, dayparting, drag-and-drop editor | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Channel logos / on-screen bug | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Sign-off and station bumpers | 🟡 closedown + generated idents | ❌ | ❌ | ✅ | ❌ |
-| Subtitles / audio track choice | ❌ | ✅ | ✅ | ❓ | 🟡 |
+| Sign-off and station bumpers | ✅ closedown + generated or your own idents | ❌ | ❌ | ✅ | ❌ |
+| Subtitles / audio track choice | 🟡 burned-in text subs, preferred-language audio | ✅ | ✅ | ❓ | 🟡 |
 | Login / API key | ✅ optional password | ❓ | ❓ | 🟡 API key | n/a |
 | ARM / Raspberry Pi image | 🟡 arm64, new | ✅ | ✅ | ✅ | ❌ |
 | Established community and docs site | ❌ new | ✅ | ✅ | ✅ | 🟡 |
 
 ## What is still missing
 
-Hand-built schedules and a drag-and-drop channel editor, Plex/Jellyfin/Emby as a source, subtitles and audio-track choice, custom ident clips (idents are generated for now), and an established community. Hardware encoding (VAAPI/NVENC) and the arm64 image are new and have had less real-world testing than the CPU/amd64 paths.
+Hand-built schedules and a drag-and-drop channel editor, Plex/Jellyfin/Emby as a source, bitmap subtitles and per-channel language settings, and an established community. Hardware encoding (VAAPI/NVENC) and the arm64 image are new and have had less real-world testing than the CPU/amd64 paths.
 
 ## Notes
 

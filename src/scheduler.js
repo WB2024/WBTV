@@ -128,7 +128,7 @@ export function signOffEnd(settings, t) {
   return end.getTime() / 1000;
 }
 
-function extendChannel(db, ch, settings, ads, now, horizon) {
+function extendChannel(db, ch, settings, ads, now, horizon, idents = []) {
   let t = db.prepare('SELECT MAX(end) AS m FROM blocks WHERE channel_id=?').get(ch.id).m;
   const floorHist = now - HISTORY_HOURS * 3600;
   if (t == null || t < floorHist) t = Math.floor(floorHist / 300) * 300;
@@ -172,9 +172,12 @@ function extendChannel(db, ch, settings, ads, now, horizon) {
 
       // Between programmes: [adverts to the next grid line] then the "coming up next" slot, so the programme still starts on the dot
       const wantPromo = promoOn && !firstOnChannel;
-      const identLen = settings.identsEnabled && !firstOnChannel ? IDENT_SECONDS : 0;
+      // a clip of the user's own (Ads tab > station idents) if there is one, otherwise the generated ident card
+      const custom = settings.identsEnabled && !firstOnChannel && idents.length ? idents[Math.floor(Math.random() * idents.length)] : null;
+      const identSecs = custom ? custom.duration : IDENT_SECONDS;
+      const identLen = settings.identsEnabled && !firstOnChannel ? identSecs : 0;
       let identDone = false;
-      const addIdent = () => { insBlock.run(ch.id, null, 'ident', null, null, 0, t, t + IDENT_SECONDS); t += IDENT_SECONDS; identDone = true; };
+      const addIdent = () => { insBlock.run(ch.id, null, 'ident', null, custom ? custom.id : null, 0, t, t + identSecs); t += identSecs; identDone = true; };
       const addPromo = (p) => {
         const pid = Number(insPromo.run(JSON.stringify(p.segments), p.est).lastInsertRowid);
         const off = item.runtime > p.dur + 40 ? rand(0.12, 0.55) * (item.runtime - p.dur - 10) : 0; // a clip from inside the next programme
@@ -352,11 +355,13 @@ function planContext(db) {
   const ads = settings.adsEnabled
     ? db.prepare("SELECT id, duration, kind, title, file FROM ads WHERE status='ready' AND duration >= 3").all().map((a) => ({ ...a, year: guessAdYear(`${a.title} ${a.file}`) }))
     : [];
-  return { settings, ads };
+  // the user's own station idents / bumpers (library type "ads_idents"): short clips played before programmes instead of the generated card
+  const idents = settings.identsEnabled ? db.prepare("SELECT id, duration FROM ads WHERE status='ready' AND kind='ident' AND duration BETWEEN 1 AND 20").all() : [];
+  return { settings, ads, idents };
 }
 function extendOne(db, c, ctx, now) {
   const pool = ctx.ads.filter((a) => a.kind === 'all' || a.kind === c.kind); // TV ads on TV channels, trailers on movie channels
-  extendChannel(db, c, ctx.settings, pool, now, now + HORIZON_HOURS * 3600);
+  extendChannel(db, c, ctx.settings, pool, now, now + HORIZON_HOURS * 3600, ctx.idents);
 }
 function prune(db, now) {
   const cutoff = now - 3 * 3600;

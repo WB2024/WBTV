@@ -139,7 +139,8 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 **Authentic presentation**
 - 🗣️ **"Coming up next" announcements**: a clip from the next programme with a voice reading what's on next and after that, generated **locally and offline** (Piper), with natural pronunciation of years, episode codes and abbreviations. More voices install in one click
 - 📼 **Classic ad breaks** from YouTube, archive.org, direct links or local folders, **matched to each programme's era**, with separate pools for TV and movie channels
-- 🌙 **Station idents, channel logos and an overnight closedown test card**
+- 🌙 **Station idents (generated, or your own clips), channel logos and an overnight closedown test card**
+- 💬 **Audio language and subtitles**: the track in your language is used, and subtitles are burned in when a file has no audio in it (anime, foreign films), including forced subtitles for foreign dialogue
 - 🧠 **Smart dayparting** from your genres and age ratings: cartoons on Saturday morning, mature and horror late
 
 **Music and radio**
@@ -377,7 +378,7 @@ WBTV is young, maintained by one person, and developed on real hardware (a Proxm
 | arm64 (Raspberry Pi 4/5) | 🟡 Built by CI; not yet run on real hardware |
 | Plex / Jellyfin / Emby as a *source* | ❌ WBTV reads your folders directly (it works as a *tuner* for them) |
 | Hand-built schedules / drag-and-drop channel editor | ❌ By design for now: channels are inferred. Overrides for names, numbers and on/off exist |
-| Subtitles and audio-track choice | ❌ Not yet |
+| Subtitles and audio-track choice | ✅ Preferred-language audio, and subtitles burned into the picture when needed (text subtitles, from a file beside the video or inside it). Bitmap subtitles (PGS/DVD) are not supported yet |
 
 If something misbehaves, please [open an issue](https://github.com/WB2024/WBTV/issues/new/choose) and include the output of `http://<server>:8420/api/status` and `docker logs wbtv`.
 

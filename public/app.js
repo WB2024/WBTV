@@ -362,7 +362,7 @@ function renderSetup() {
 
 const LIB_TYPES = {
   tv: 'TV Shows', movies: 'Movies', music: 'Music videos', radio: 'Radio (music files)', talk_interviews: 'Radio: interviews', talk_podcasts: 'Radio: podcasts', talk_audiobooks: 'Radio: audiobooks', iptv: 'Live TV / IPTV',
-  ads_tv: 'Ads – TV channels only', ads_movies: 'Ads / trailers – Movie channels only', ads: 'Ads – any channel',
+  ads_tv: 'Ads – TV channels only', ads_movies: 'Ads / trailers – Movie channels only', ads: 'Ads – any channel', ads_idents: 'Station idents / bumpers',
 };
 const isAdsLib = (l) => l.type.startsWith('ads');
 const isMediaLib = (l) => !isAdsLib(l) && l.type !== 'iptv';
@@ -529,7 +529,7 @@ async function tabAds(body) {
   const kindSel = h('select', {}, h('option', { value: 'tv' }, 'TV channels'), h('option', { value: 'movie' }, 'Movie channels (trailers)'), h('option', { value: 'all' }, 'Any channel'));
   const msg = h('span', { class: 'note' });
   const status = h('div', {});
-  const kindName = { all: 'Any', tv: 'TV', movie: 'Movies' };
+  const kindName = { all: 'Any', tv: 'TV', movie: 'Movies', ident: 'Idents' };
   body.append(
     status,
     boolField(s, 'adsEnabled', 'Enable ad breaks', 'Mid-programme breaks, and programmes start on the time grid. Needs some ads below.'),
@@ -539,8 +539,8 @@ async function tabAds(body) {
     boolField(s, 'fillGaps', 'Fill the gap between programmes with ads', 'So the next programme starts exactly on the time grid.'),
     numField(s, 'alignMinutes', 'Programme start grid (minutes)', '5 = :00, :05, :10… ; 30 is very authentic. Also the longest gap-filler.', { min: 1 }),
     h('h3', {}, 'Add ad folders'),
-    addLibraryForm(() => { reload(); scanStatus(status, reload); }, ['ads_tv', 'ads_movies', 'ads']),
-    h('p', { class: 'note' }, 'Tag a folder as TV and its ads only appear on TV channels; tag one as Movies (adverts + trailers) for movie channels.'),
+    addLibraryForm(() => { reload(); scanStatus(status, reload); }, ['ads_tv', 'ads_movies', 'ads', 'ads_idents']),
+    h('p', { class: 'note' }, 'Tag a folder as TV and its ads only appear on TV channels; tag one as Movies (adverts + trailers) for movie channels. A folder of short clips (up to 20 seconds) tagged Station idents is played before programmes instead of the generated ident card (turn idents on in Settings).'),
     h('div', {}, libTable(adLibs, reload, () => scanStatus(status, reload))),
     h('h3', {}, 'Add ads from links'), ta,
     h('div', { class: 'row2' }, h('span', {}, 'Show on:'), kindSel,
@@ -627,11 +627,20 @@ async function tabSettings(body) {
     h('h3', {}, 'Presentation'),
     boolField(s, 'channelBug', 'Channel bug on programmes', 'A small channel logo (add logos in the Channels tab) or, without one, the channel name, in the top-right corner.'),
     boolField(s, 'lyrics', 'Show lyrics on music radio', 'Uses a .lrc (time-synced), .srt or .txt file with the same name as the track, or lyrics stored in the file tags. Plain text is paged across the song as an estimate.'),
-    boolField(s, 'identsEnabled', 'Station idents', 'A 5 second generated ident (big channel number and name) before each programme. Re-plans the schedule.'),
+    boolField(s, 'identsEnabled', 'Station idents', 'A short ident before each programme: by default a generated 5 second card (big channel number and name), or your own clips if you add a Station idents folder in the Ads tab. Re-plans the schedule.'),
     boolField(s, 'signOffEnabled', 'Closedown overnight', 'TV and movie channels show a test card and tone between these times, then start up again. The guide shows "Off air".'),
     h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Closedown from / to'),
       h('input', { type: 'time', style: 'width:120px', value: s.signOffFrom, onchange: (e) => put({ signOffFrom: e.target.value }) }),
       h('input', { type: 'time', style: 'width:120px', value: s.signOffTo, onchange: (e) => put({ signOffTo: e.target.value }) })),
+    h('h3', {}, 'Language and subtitles'),
+    h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Preferred language'),
+      h('select', { onchange: async (e) => { await put({ language: e.target.value }); renderSetup(); } },
+        [['eng', 'English'], ['fre', 'French'], ['ger', 'German'], ['spa', 'Spanish'], ['ita', 'Italian'], ['jpn', 'Japanese'], ['kor', 'Korean'], ['chi', 'Chinese'], ['rus', 'Russian'], ['por', 'Portuguese'], ['dut', 'Dutch'], ['wel', 'Welsh']].map(([v, l]) => h('option', { value: v, selected: v === s.language }, l))),
+      h('span', { class: 'note' }, 'If a file has several audio tracks, the one in this language is used.')),
+    h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Subtitles'),
+      h('select', { onchange: async (e) => { await put({ subtitleMode: e.target.value }); renderSetup(); } },
+        [['foreign', 'Only when there is no audio in my language'], ['always', 'Always, when the file has them'], ['off', 'Never']].map(([v, l]) => h('option', { value: v, selected: v === s.subtitleMode }, l))),
+      h('span', { class: 'note' }, 'Subtitles are burned into the picture (a live stream has no subtitle menu): from a file beside the video such as Movie.en.srt, or a text track inside it. Tracks inside a file are prepared in the background the first time, so the first showing may not have them. Forced subtitles for foreign dialogue are included.')),
     h('h3', {}, 'Video encoding'),
     h('div', { class: 'row2' }, h('label', { style: 'width:280px' }, 'Stream size'),
       h('select', { onchange: async (e) => { await put({ streamHeight: Number(e.target.value) }); renderSetup(); } },

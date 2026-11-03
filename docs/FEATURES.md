@@ -52,9 +52,16 @@ The complete feature list, by area. For what's new in each version see the [rele
   - **Era-matched adverts**: the year is read from an ad's title or folder name (`1994`, `1990s`, `80s`) and ads from the programme's era are preferred.
   - WBTV ships with no ads; they come from you.
 - **Channel logos / name bug** on programmes (upload a logo or fall back to the channel name).
-- **Station idents**: a short generated ident (big channel number and name) before each programme.
+- **Station idents**: a short ident before each programme: a generated card (big channel number and name), or **your own clips** from a folder added as *Station idents / bumpers* (up to 20 seconds each, chosen at random).
 - **Closedown**: an overnight test card ("Off air") in a time window you choose, shown in the guide too.
 - All of the above are individually switchable in Settings.
+
+## Languages and subtitles
+
+- **Preferred audio language**: if a file has several audio tracks, the one in your language is used (commentary tracks are avoided), not just the first.
+- **Subtitles burned into the picture** (a live stream has no subtitle menu): *only when there is no audio in your language* (the default), *always*, or *never*. Forced subtitles for foreign dialogue inside an English film are included.
+- Subtitles come from a file beside the video (`Movie.en.srt`, `.ass`, `.vtt`) or from a text track inside it. Tracks inside a file are extracted once, in the background, ahead of the programme airing, and cached.
+- Not yet: bitmap subtitles (PGS/DVD), and choosing a different language per channel.
 
 ## Music and radio
 
