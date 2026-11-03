@@ -6,6 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { cfg } from './config.js';
 import { tx } from './db.js';
+import { scanNavidrome, streamUrl as navStream, fetchLyrics as navLyrics } from './navidrome.js';
 
 export const isRemote = (p) => typeof p === 'string' && p.startsWith('ms://');
 export const parseRemote = (p) => { const m = /^ms:\/\/(\d+)\/(.+)$/.exec(String(p || '')); return m ? { source: Number(m[1]), ref: m[2] } : null; };
@@ -59,12 +60,20 @@ export function getSource(db, id) {
 }
 export const forgetSource = (id) => cache.delete(id);
 
+/** Lyrics held by a media server for an item path (Navidrome): { synced } | { text } | null. */
+export async function remoteLyrics(db, p) {
+  const r = parseRemote(p);
+  const src = r && getSource(db, r.source);
+  return src?.kind === 'navidrome' ? navLyrics(src, r.ref) : null;
+}
+
 /** The URL ffmpeg should read for an item path (a plain file path is returned as is). */
 export function resolveMedia(db, p) {
   const r = parseRemote(p);
   if (!r) return p;
   const src = getSource(db, r.source);
   if (!src) return p; // the source was removed: ffmpeg will fail on it and the broadcaster shows the test card
+  if (src.kind === 'navidrome') return navStream(src, r.ref);
   return `${src.url}/Videos/${encodeURIComponent(r.ref)}/stream?static=true&MediaSourceId=${encodeURIComponent(r.ref)}&api_key=${encodeURIComponent(src.token || '')}`;
 }
 
@@ -92,6 +101,7 @@ export async function scanMediaServer(db, lib, progress, { safeRemovals }) {
   const src = m && db.prepare('SELECT * FROM sources WHERE id=?').get(Number(m[1]));
   if (!src) throw new Error('the media server for this library was removed');
   const view = m[2];
+  if (src.kind === 'navidrome') return scanNavidrome(db, lib, src, view, progress, { safeRemovals });
   const uid = src.user_id;
   const base = `/Users/${uid}/Items?ParentId=${encodeURIComponent(view)}&Recursive=true&Fields=${FIELDS}`;
   const tv = lib.type === 'tv';

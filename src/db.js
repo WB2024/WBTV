@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS libraries (
 );
 -- media servers (Jellyfin / Emby) whose libraries are read through their API; the key stays on the server
 CREATE TABLE IF NOT EXISTS sources (
-  id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'jellyfin', name TEXT, url TEXT NOT NULL UNIQUE, token TEXT, user_id TEXT
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'jellyfin', name TEXT, url TEXT NOT NULL UNIQUE, token TEXT, user_id TEXT, salt TEXT
 );
 CREATE TABLE IF NOT EXISTS shows (
   id INTEGER PRIMARY KEY, library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
@@ -95,6 +95,7 @@ function migrate(db) {
   if (!icols.includes('album')) db.exec('ALTER TABLE items ADD COLUMN album TEXT');
   // older DBs: blocks.promo_id (announcement slots)
   if (!db.prepare('PRAGMA table_info(blocks)').all().some((c) => c.name === 'promo_id')) db.exec('ALTER TABLE blocks ADD COLUMN promo_id INTEGER');
+  if (!db.prepare('PRAGMA table_info(sources)').all().some((c) => c.name === 'salt')) db.exec('ALTER TABLE sources ADD COLUMN salt TEXT');
   // older DBs: ads.kind
   if (!db.prepare('PRAGMA table_info(ads)').all().some((c) => c.name === 'kind')) {
     db.exec("ALTER TABLE ads ADD COLUMN kind TEXT NOT NULL DEFAULT 'all'");

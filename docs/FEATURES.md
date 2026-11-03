@@ -91,6 +91,13 @@ The complete feature list, by area. For what's new in each version see the [rele
 - If the server is down during a scan, nothing is removed. Pictures are downloaded a few hundred at a time per scan.
 - Not yet: Plex as a source, music/audiobooks from a server, and fetching subtitles through the server's own subtitle endpoint (embedded subtitles are extracted by reading the file).
 
+## Navidrome as a source (music)
+
+- Add a Navidrome (or other Subsonic / OpenSubsonic) server under Setup > Libraries with its address and your login; choose *All music* or a single music folder. Songs become radio stations by genre and decade, exactly as from folders.
+- **Cover art** (one picture per album) and **lyrics** (time-synced where the server has them) come from the server, so radio screens look right even when the files carry no embedded art.
+- WBTV stores a login token and salt, not your password, and hides them from logs.
+- Not yet: spoken-word libraries from Audiobookshelf, and Plex.
+
 ## Works with your other apps
 
 - **HDHomeRun emulation**: add WBTV as a Live TV tuner in **Plex, Jellyfin and Emby**. The MPEG-TS stream is remuxed, not re-encoded.

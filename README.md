@@ -150,7 +150,7 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 
 **Works with everything**
 - 🔌 **Tuner output**: HDHomeRun emulation, an **M3U playlist** and **XMLTV guide** for Plex, Jellyfin, Emby, TiviMate, VLC, Kodi and more
-- 🗄️ **Jellyfin and Emby as a source**: connect with an API key and WBTV builds channels from their libraries too (folders still work, and you can mix both)
+- 🗄️ **Jellyfin, Emby and Navidrome as a source**: connect with an API key (or a Navidrome login) and WBTV builds channels from those libraries too. Folders still work and you can mix both: [which is better for you?](#folders-or-a-media-server)
 - 🌐 **Live TV**: add any M3U/M3U8 playlist, HLS stream, or YouTube live link
 - 📱 **Native Android TV / Fire TV app** (Kotlin, Compose, Media3) with a full on-TV settings screen
 - 🔒 **Optional password and access key**, and a documented [HTTP API](docs/API.md)
@@ -234,6 +234,28 @@ Big playlists (more than 80 streams) start with the first 80 *working* channels 
 </p>
 
 **Web keys:** arrows to browse, Enter to watch, 0-9 for a channel number, Space to pause, Left/Right to rewind or skip in fullscreen, L to go back to live, F for fullscreen, G or Esc for the guide, `[` and `]` for the filter chips.
+
+## Folders or a media server?
+
+WBTV can read your library two ways, and you can mix them. **Folders are the default and the best-tested route.** Reading from a media server is an option for when folders aren't practical. Neither is "better" in general, so here is an honest comparison to help you choose.
+
+| | **Folders (direct)** | **Media server (Jellyfin / Emby for TV and films, Navidrome for music)** |
+|---|---|---|
+| **How it plays** | ffmpeg reads each file straight from disk | ffmpeg reads the original over HTTP from the server (no transcoding on the server's side) |
+| **Start-up speed** | Fastest: seeking is local | A little slower, because every piece goes through the server. Not measured on every setup, so test with your own |
+| **Network use** | None | Every watched channel pulls its full bitrate across your network (fine on gigabit) |
+| **Scanning** | Reads files and `.nfo` tags, probes durations. Slower the first time, incremental after | Usually faster: one API call per 500 items, because the server already indexed everything. Pictures download a few hundred per scan |
+| **Metadata** | As good as your `.nfo` tags and folder names | The server's metadata, often richer. Studios and genres can differ from your `.nfo` tags, so **channel names and numbers can change** |
+| **Subtitles and lyrics beside the file** (`Movie.en.srt`, `Song.lrc`) | Found automatically | Not visible to WBTV. Embedded subtitles work but are extracted by reading the whole file over HTTP. Navidrome supplies its own lyrics instead |
+| **If the server is down** | Unaffected | Its channels can't play until it's back, and a revoked key stops them |
+| **Needs the files mounted into WBTV** | Yes | No, so WBTV can run on a different machine from your media |
+| **Moving parts** | One | Two (WBTV plus the server), and a key or login to keep valid |
+| **Switching later** | | Items get new IDs, so the schedule re-plans. Replace a library rather than adding the same content twice, or it will appear twice |
+
+**Choose folders if** your media is already mounted where WBTV runs, your `.nfo` tags give you good channels, or you want the fewest moving parts.
+**Choose a media server if** WBTV runs somewhere that can't see your files, your tags are sparse and you'd rather use the server's metadata, or you'd like one place to manage everything.
+
+**Navidrome (music).** Add it under *Setup > Libraries > Or read libraries from a media server*: enter the address and your Navidrome login. WBTV keeps a token, not your password. Each album's cover art and the songs' lyrics (time-synced where the server has them) come from Navidrome, which avoids guessing from file tags. Audiobookshelf (audiobooks and podcasts) and Plex are not supported yet.
 
 ## Use WBTV in Plex, Jellyfin, TiviMate and other players
 
@@ -377,7 +399,8 @@ WBTV is young, maintained by one person, and developed on real hardware (a Proxm
 | CPU (x264) encoding, amd64 | ✅ The tested path |
 | Hardware encoding (VAAPI / NVENC) | 🟡 New. Self-test and fallback verified; not yet seen on a real GPU |
 | arm64 (Raspberry Pi 4/5) | 🟡 Built by CI; not yet run on real hardware |
-| Jellyfin / Emby as a *source* | ✅ Read TV and films through the server's API (Setup > Libraries), no shared folders needed. WBTV also works as a *tuner* for them |
+| Jellyfin / Emby as a *source* | ✅ Read TV and films through the server's API (Setup > Libraries), no shared folders needed. See [Folders or a media server?](#folders-or-a-media-server) |
+| Navidrome as a *source* | ✅ Music for radio stations, with the server's cover art and lyrics. Tested against a mock server; not yet against a real Navidrome in daily use |
 | Plex as a *source* | ❌ Not yet (Plex works as a *tuner* target today) |
 | Hand-built schedules / drag-and-drop channel editor | ❌ By design for now: channels are inferred. Overrides for names, numbers and on/off exist |
 | Subtitles and audio-track choice | ✅ Preferred-language audio, and subtitles burned into the picture when needed (text subtitles, from a file beside the video or inside it). Bitmap subtitles (PGS/DVD) are not supported yet |

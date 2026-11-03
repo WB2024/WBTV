@@ -9,7 +9,8 @@ import { openDb, getSettings, setSettings } from './db.js';
 import { scanLibrary } from './scanner.js';
 import { inferChannels, syncLiveChannels } from './channels.js';
 import { checkStreams, isUrl } from './iptv.js';
-import { discover, forgetSource } from './mediaserver.js';
+import { discover, forgetSource, normalizeUrl } from './mediaserver.js';
+import { subsonicDiscover } from './navidrome.js';
 import { ensureSchedule, ensureChannelSchedule, rescheduleFuture } from './scheduler.js';
 import { probePending } from './media.js';
 import { Broadcaster } from './broadcaster.js';
@@ -86,18 +87,23 @@ app.get('/api/libraries', () => db.prepare(`
          (SELECT COUNT(*) FROM ads a WHERE a.library_id=l.id) AS ads FROM libraries l ORDER BY l.id`).all());
 
 // ---- media servers (Jellyfin / Emby) as a source of TV and films
+const isNavidrome = (b) => b?.kind === 'navidrome';
+const findSource = (b) => (isNavidrome(b) ? subsonicDiscover(b.url, b.username, b.password, normalizeUrl) : discover(b?.url, b?.token, b?.userId));
+const publicSource = ({ salt, token, ...rest }) => rest; // credentials never go back to the browser
 app.post('/api/sources/discover', async (req, reply) => {
-  try { return await discover(req.body?.url, req.body?.token, req.body?.userId); } catch (e) { return reply.code(400).send({ error: e.message }); }
+  try { return publicSource(await findSource(req.body)); } catch (e) { return reply.code(400).send({ error: e.message }); }
 });
 app.post('/api/sources', async (req, reply) => {
   try {
-    const d = await discover(req.body?.url, req.body?.token, req.body?.userId);
-    const kind = /emby/i.test(d.product) ? 'emby' : 'jellyfin';
-    db.prepare(`INSERT INTO sources(kind,name,url,token,user_id) VALUES(?,?,?,?,?)
-      ON CONFLICT(url) DO UPDATE SET kind=excluded.kind,name=excluded.name,token=excluded.token,user_id=excluded.user_id`).run(kind, d.name, d.url, String(req.body.token).trim(), d.userId);
+    const d = await findSource(req.body);
+    const nav = isNavidrome(req.body);
+    const kind = nav ? 'navidrome' : /emby/i.test(d.product) ? 'emby' : 'jellyfin';
+    db.prepare(`INSERT INTO sources(kind,name,url,token,user_id,salt) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(url) DO UPDATE SET kind=excluded.kind,name=excluded.name,token=excluded.token,user_id=excluded.user_id,salt=excluded.salt`)
+      .run(kind, d.name, d.url, nav ? d.token : String(req.body.token).trim(), d.userId, nav ? d.salt : null);
     const id = db.prepare('SELECT id FROM sources WHERE url=?').get(d.url).id;
     forgetSource(id);
-    return { id, ...d };
+    return { id, kind, ...publicSource(d) };
   } catch (e) { return reply.code(400).send({ error: e.message }); }
 });
 app.get('/api/sources', () => db.prepare('SELECT id,kind,name,url,user_id FROM sources ORDER BY id').all()); // never the key
@@ -113,8 +119,9 @@ app.delete('/api/sources/:id', async (req) => {
 app.post('/api/libraries', async (req, reply) => {
   const { path: p, type, name } = req.body || {};
   if (req.body?.sourceId) { // one view (library) of a Jellyfin / Emby server
-    const src = db.prepare('SELECT id,name FROM sources WHERE id=?').get(Number(req.body.sourceId));
-    if (!src || !req.body.viewId || !['tv', 'movies'].includes(type)) return reply.code(400).send({ error: 'choose a server, a library and a type (TV shows or Movies)' });
+    const src = db.prepare('SELECT id,name,kind FROM sources WHERE id=?').get(Number(req.body.sourceId));
+    const allowed = src?.kind === 'navidrome' ? ['radio'] : ['tv', 'movies'];
+    if (!src || !req.body.viewId || !allowed.includes(type)) return reply.code(400).send({ error: 'choose a server, a library and a type (Jellyfin / Emby: TV shows or Movies; Navidrome: music)' });
     try {
       const r = db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run(name || `${src.name}`, `ms://${src.id}/${String(req.body.viewId).replace(/[^\w-]/g, '')}`, type);
       const id = Number(r.lastInsertRowid);

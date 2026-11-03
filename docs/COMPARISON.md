@@ -35,7 +35,7 @@ WBTV is one of several projects that turn your media into live TV. They make dif
 | **Adverts matched to the era of the programme** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Themes (Freeview, Satellite, 90s, Aero, ...) | ✅ 9 | ❌ | ❌ | 🟡 | ✅ |
 | One-container Docker install | ✅ | ✅ | ✅ | ❌ | n/a |
-| Plex / Jellyfin / Emby as a source | 🟡 Jellyfin + Emby (Plex soon) | ✅ | ✅ | ❌ | ❌ |
+| Plex / Jellyfin / Emby as a source | 🟡 Jellyfin, Emby, Navidrome (Plex soon) | ✅ | ✅ | ❌ | ❌ |
 | **M3U + XMLTV output / HDHomeRun emulation** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Hardware transcoding | 🟡 VAAPI/NVENC, new | ✅ | ✅ | n/a | ❌ |
 | Hand-built schedules, dayparting, drag-and-drop editor | ❌ | ✅ | ✅ | ✅ | ❌ |

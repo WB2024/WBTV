@@ -8,8 +8,8 @@ import { REEL } from './scheduler.js';
 import { getSettings } from './db.js';
 import { logoFile } from './logos.js';
 import { prepare as prepareNarration, cached as cachedNarration } from './tts.js';
-import { findLyrics, buildAss, fontFamily } from './lyrics.js';
-import { resolveMedia } from './mediaserver.js';
+import { findLyrics, buildAss, fontFamily, parseLyrics } from './lyrics.js';
+import { resolveMedia, isRemote, remoteLyrics } from './mediaserver.js';
 import { select as selectStreams, subtitleFilter } from './streams.js';
 import { openLive, forgetLive, isUrl } from './iptv.js';
 import { getBlockAt, ensureChannelSchedule } from './scheduler.js';
@@ -29,7 +29,15 @@ let instances = 0; // every broadcaster gets its own folder, so a stopping one c
 const LEAD = 10;        // seconds of video we keep buffered ahead of the wall clock
 const WINDOW = 6;       // segments advertised in the live playlist
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const hideKeys = (s) => String(s).replace(/api_key=[^&\s'"]+/g, 'api_key=***'); // media-server stream URLs carry the API key: never write it to the logs
+/** Lyrics a media server holds for a track, in the same shape findLyrics returns. */
+async function serverLyrics(db, stored) {
+  const r = await remoteLyrics(db, stored);
+  if (!r) return null;
+  if (r.synced?.length >= 2) return { synced: r.synced };
+  return r.text ? parseLyrics(r.text) : null;
+}
+// media-server stream URLs carry the API key (Jellyfin) or the token and salt (Navidrome / Subsonic): never write them to the logs
+const hideKeys = (s) => String(s).replace(/api_key=[^&\s'"]+/g, 'api_key=***').replace(/([?&])(t|s)=[0-9a-f]{8,}/g, '$1$2=***');
 
 /**
  * One Broadcaster per watched channel. It walks the persisted schedule in real time and
@@ -165,7 +173,7 @@ export class Broadcaster {
         dur = block.end - cursor;
         if (dur < 0.05) { cursor = block.end + 0.01; continue; }
         plan = {
-          file: resolveMedia(this.db, block.file), offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start, content: block.kind === 'content' && ['episode', 'movie'].includes(block.item_kind),
+          file: resolveMedia(this.db, block.file), stored: block.file, offset: block.in_point + (cursor - block.start), promo: block.kind === 'promo' ? block : null, elapsed: cursor - block.start, content: block.kind === 'content' && ['episode', 'movie'].includes(block.item_kind),
           meta: ['musicvideo', 'track', 'talk'].includes(block.item_kind)
             ? { kind: block.item_kind, title: block.m_title, artist: block.m_artist, album: block.m_album, year: block.m_year, poster: block.m_poster, runtime: block.m_runtime, label: firstOf(block.m_genres) } : null,
         };
@@ -394,7 +402,8 @@ export class Broadcaster {
     let ass = null;
     try {
       if (m.kind === 'track' && getSettings(this.db).lyrics) {
-        const lyr = await findLyrics(plan.file);
+        // a track from a media server asks the server (Navidrome keeps the lyrics); a file on disk looks beside the file and in its tags
+        const lyr = isRemote(plan.stored) ? await serverLyrics(this.db, plan.stored) : await findLyrics(plan.file);
         if (lyr) {
           const { width: W, height: H } = cfg, artH = Math.round(H * 0.5);
           const tx = art ? Math.round(W * 0.06 + artH + W * 0.04) : Math.round(W * 0.08);
