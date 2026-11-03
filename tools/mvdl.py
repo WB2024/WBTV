@@ -296,7 +296,8 @@ def cmd_batch(a):
             have = library_index(c['root'])
             r = ytdlp('-J', link)
             try: info = json.loads(r.stdout)
-            except Exception: print(f'  {link} ... yt-dlp could not read it'); bad += 1; continue
+            except Exception: info = None
+            if not info or not isinstance(info, dict): print(f'  {link} ... yt-dlp could not read it (private, removed or blocked)'); bad += 1; continue
             t = title or info.get('track') or clean_title(re.sub(r'^\s*' + re.escape(artist) + r'\s*[-:–]\s*', '', info.get('title', ''), flags=re.I))
             t = re.sub(r'\s*[\(\[]\s*official[^)\]]*[\)\]]\s*$', '', t, flags=re.I).strip()
             if have_it(have, artist, t): print(f'  {artist} - {t} ... already have it'); continue
