@@ -122,6 +122,16 @@ def judge_upload(info):
     if d and (d < 75 or d > 20 * 60): return f'the wrong length ({int(d)}s)'
     return None
 
+BOOTLEG = re.compile(r"\b(live|concert|bootleg|festival|tour|gig|soundboard|rehearsal|fan\s?cam|reaction|cover|tribute|karaoke|tv\s+performance|top of the pops|sessions?|full\s+show)\b", re.I)
+def judge_official(info, artist):
+    """Only an OFFICIAL upload is wanted (a live recording is fine when it is the official video). Returns a reason, or None when it looks official."""
+    title, chan = info.get('title') or '', info.get('channel') or info.get('uploader') or ''
+    claims = re.search(r'\bofficial\b', title, re.I) and not re.search(r'\bofficial\s+(audio|lyric)', title, re.I)
+    on_artist_channel = norm(artist) in norm(chan) or 'vevo' in chan.lower() or bool(info.get('channel_is_verified'))
+    if BOOTLEG.search(title) and not claims: return 'looks like a live / fan recording, not an official video'
+    if not (claims or on_artist_channel): return "not clearly official (no 'official' in the title, and not the artist's, a verified or a VEVO channel)"
+    return None
+
 def looks_still(path, seconds=24, fps=2, w=64, h=36):
     """True when almost no frames change: a picture with the audio over it. Unknown / unreadable is never 'still'."""
     try:
@@ -186,13 +196,14 @@ def fetch_one(root, artist, title, year, genres, direct=None, force=False, dry=F
     cands = candidates(artist, title, direct); why = []
     if not cands: print('no matching upload found'); return False
     for info in cands:
-        bad = None if force else judge_upload(info)
+        bad = None if force else (judge_upload(info) or judge_official(info, artist))
         if bad: why.append(bad); continue
         tmp = tempfile.mkdtemp(prefix='mvdl-')
         try:
             video, thumb = download(info, tmp)
             if not force and looks_still(video): why.append('a still image with the audio played over it'); continue
             place(root, artist, title, year, genres, video, thumb)
+            with open(os.path.join(root, '.mvdl-log.jsonl'), 'a', encoding='utf-8') as lg: lg.write(json.dumps({'when': time.strftime('%Y-%m-%d %H:%M'), 'artist': artist, 'title': title, 'source': info.get('webpage_url'), 'uploader': info.get('channel') or info.get('uploader'), 'upload_title': info.get('title')}) + chr(10))
             print('saved'); return True
         except Exception as e: why.append(str(e))
         finally: shutil.rmtree(tmp, ignore_errors=True)
@@ -279,6 +290,7 @@ def cmd_url(a):
     fetch_one(c['root'], artist, title, (info.get('release_year') or str(info.get('upload_date', ''))[:4]) or '', genres, a.url, force=a.force)
 
 def main():
+    for st in (sys.stdout, sys.stderr): st.reconfigure(encoding='utf-8', errors='replace')
     p = argparse.ArgumentParser(prog='mvdl', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     s = p.add_subparsers(dest='cmd')
     s.add_parser('setup').set_defaults(f=cmd_setup)
