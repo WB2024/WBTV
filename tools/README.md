@@ -26,3 +26,14 @@ docker run --rm -v "/path/to/Music Videos":/mv wb20244/wbtv:latest node tools/mv
 ```
 
 If your WBTV database is in use, copy `wbtv.db` (and its `-wal`/`-shm` files) somewhere first and point `--db` at the copy. Then let WBTV scan the library twice (the second scan confirms the old file names are really gone).
+
+## mvdl.py - fetch music videos from the command line
+
+A stand-alone, dependency-free Python tool (needs `yt-dlp` and `ffmpeg`) that fills the same `Artist/Artist - Title.mp4` + poster + `.nfo` layout WBTV reads.
+Artists come from Navidrome, video lists from MusicBrainz, files from yt-dlp. Lyric / audio / "Topic" uploads and still-image-with-audio files are rejected.
+
+    python tools/mvdl.py setup                   # Navidrome login + your local music video folder (saved to ~/.mvdl.json)
+    python tools/mvdl.py artists                 # your Navidrome artists and how many videos you have of each
+    python tools/mvdl.py list "Morrissey"        # what MusicBrainz knows, marked have / MISSING
+    python tools/mvdl.py get "Morrissey" -n      # dry run; drop -n to download, or use --all-artists
+    python tools/mvdl.py url <youtube-url> --force   # one chosen video (--force skips the checks)
