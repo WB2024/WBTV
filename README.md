@@ -372,7 +372,7 @@ Settings > Video encoding is **Automatic** by default: WBTV runs a real test enc
 - **Intel / AMD (VAAPI):** add `devices: ["/dev/dri:/dev/dri"]` to the compose service (on Proxmox LXC, pass `/dev/dri/renderD128` through to the container first).
 - **NVIDIA (NVENC):** install the NVIDIA container toolkit and add `runtime: nvidia` with `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=video,compute,utility`.
 
-Scaling and on-screen captions still run on the CPU; only the H.264 encode moves. *(New in 0.8 and so far tested only through its self-test and fallback path; reports from real GPUs are very welcome.)*
+Scaling and on-screen captions still run on the CPU; only the H.264 encode moves. *(New in 0.8 and so far tested only through its self-test and fallback path. If you have a GPU, [please tell me how it goes](https://github.com/WB2024/WBTV/issues/1).)*
 
 ## Configuration
 
