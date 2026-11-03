@@ -133,7 +133,11 @@ export async function scanLibrary(db, lib, progress) {
     let runtime = nfo?.durationSec || 0, probed = runtime ? 1 : 0;
     if (!runtime && nfo?.runtimeSec) runtime = nfo.runtimeSec; // provisional, ffprobe will correct it
 
-    if (lib.type === 'music') {
+    if (lib.type === 'clips') {
+      // clips and interviews: short videos of every kind, one channel, shuffled; the file name is the title
+      queue([lib.id, null, 'clip', full, nfo?.title || cleanName(base), nfo?.plot || '', nfo?.year, null, null, nfo?.aired || '', null, '',
+        runtime, probed, j([]), j(nfo?.genres), j([]), poster, st.mtimeMs, st.size, nst ? nst.mtimeMs : null, '', '']);
+    } else if (lib.type === 'music') {
       // music video: NFO first, else "Artist - Title" from the file name
       const m = base.match(/^(.+?)\s+-\s+(.+)$/);
       const artist = nfo?.artist || (m ? m[1].trim() : path.basename(dir));

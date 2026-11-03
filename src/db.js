@@ -95,6 +95,10 @@ function migrate(db) {
   if (!icols.includes('album')) db.exec('ALTER TABLE items ADD COLUMN album TEXT');
   // older DBs: blocks.promo_id (announcement slots)
   if (!db.prepare('PRAGMA table_info(blocks)').all().some((c) => c.name === 'promo_id')) db.exec('ALTER TABLE blocks ADD COLUMN promo_id INTEGER');
+  // libraries can be given a channel group (libraries sharing one merge into a channel) and a mode: inferred | single | both
+  const lcols = db.prepare('PRAGMA table_info(libraries)').all().map((c) => c.name);
+  if (!lcols.includes('channel_group')) db.exec('ALTER TABLE libraries ADD COLUMN channel_group TEXT');
+  if (!lcols.includes('group_mode')) db.exec("ALTER TABLE libraries ADD COLUMN group_mode TEXT NOT NULL DEFAULT 'inferred'");
   if (!db.prepare('PRAGMA table_info(sources)').all().some((c) => c.name === 'salt')) db.exec('ALTER TABLE sources ADD COLUMN salt TEXT');
   // older DBs: ads.kind
   if (!db.prepare('PRAGMA table_info(ads)').all().some((c) => c.name === 'kind')) {

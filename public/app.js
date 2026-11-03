@@ -362,7 +362,7 @@ function renderSetup() {
 
 const LIB_TYPES = {
   tv: 'TV Shows', movies: 'Movies', music: 'Music videos', radio: 'Radio (music files)', talk_interviews: 'Radio: interviews', talk_podcasts: 'Radio: podcasts', talk_audiobooks: 'Radio: audiobooks', iptv: 'Live TV / IPTV',
-  ads_tv: 'Ads – TV channels only', ads_movies: 'Ads / trailers – Movie channels only', ads: 'Ads – any channel', ads_idents: 'Station idents / bumpers',
+  ads_tv: 'Ads – TV channels only', ads_movies: 'Ads / trailers – Movie channels only', ads: 'Ads – any channel', ads_idents: 'Station idents / bumpers', clips: 'Clips / interviews (shuffled video)',
 };
 const isAdsLib = (l) => l.type.startsWith('ads');
 const isMediaLib = (l) => !isAdsLib(l) && l.type !== 'iptv';
@@ -383,11 +383,21 @@ function scanStatus(box, onIdle) {
   pollTimer = setInterval(tick, 1000); tick();
 }
 
+/** Channel group and mode for a library: libraries that share a group name become one channel; mode says whether the library also gets its normal genre / studio / decade channels. */
+function groupControls(l, reload) {
+  if (!['tv', 'movies', 'music', 'clips'].includes(l.type)) return null;
+  const set = (b) => api(`/api/libraries/${l.id}`, { method: 'PATCH', body: b }).then(reload).catch((e) => alert(e.message));
+  const modes = l.type === 'clips' ? [['single', 'one channel']] : [['inferred', 'genre / studio channels'], ['single', 'one channel'], ['both', 'both']];
+  return h('div', { class: 'note', title: 'Libraries that share a group name are merged into one channel. "One channel" skips the genre, studio and decade channels for this library; "both" keeps them as well.' },
+    'Channel group: ', h('input', { type: 'text', value: l.channel_group || '', placeholder: l.type === 'clips' ? l.name : 'none', style: 'width:130px', onchange: (e) => set({ group: e.target.value }) }), ' ',
+    h('select', { onchange: (e) => set({ groupMode: e.target.value }) }, modes.map(([v, t]) => h('option', { value: v, selected: v === (l.type === 'clips' ? 'single' : l.group_mode || 'inferred') }, t))));
+}
+
 function libTable(libs, reload, poll) {
   if (!libs.length) return h('p', { class: 'note' }, 'None yet.');
   return h('table', {},
     h('tr', {}, ['Name', 'Path', 'Type', 'Items', ''].map((t) => h('th', {}, t))),
-    libs.map((l) => h('tr', {}, h('td', {}, l.name, l.perTitle !== undefined ? h('div', { class: 'note' }, h('label', { title: 'Each show or book gets its own channel, always playing in order and looping. Off: one station for the whole library.' }, h('input', { type: 'checkbox', checked: !!l.perTitle, onchange: async (e) => { await api(`/api/libraries/${l.id}`, { method: 'PATCH', body: { perTitle: e.target.checked } }).catch((er) => alert(er.message)); reload(); } }), ' one channel per show / book')) : null), h('td', { style: 'word-break:break-all' }, l.path.startsWith('ms://') ? 'Media server library' : l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
+    libs.map((l) => h('tr', {}, h('td', {}, l.name, groupControls(l, reload), l.perTitle !== undefined ? h('div', { class: 'note' }, h('label', { title: 'Each show or book gets its own channel, always playing in order and looping. Off: one station for the whole library.' }, h('input', { type: 'checkbox', checked: !!l.perTitle, onchange: async (e) => { await api(`/api/libraries/${l.id}`, { method: 'PATCH', body: { perTitle: e.target.checked } }).catch((er) => alert(er.message)); reload(); } }), ' one channel per show / book')) : null), h('td', { style: 'word-break:break-all' }, l.path.startsWith('ms://') ? 'Media server library' : l.path), h('td', {}, LIB_TYPES[l.type] || l.type),
       h('td', {}, String(isAdsLib(l) ? l.ads : l.type === 'iptv' ? '' : l.items)),
       h('td', {}, h('button', { class: 'sm', onclick: async () => { await api('/api/scan', { method: 'POST', body: { libraryId: l.id } }); poll(); } }, 'Scan'), ' ',
         h('button', { class: 'sm danger', onclick: async () => { if (confirm(`Remove "${l.name}" from WBTV? (files are not touched)`)) { await api(`/api/libraries/${l.id}`, { method: 'DELETE' }); reload(); } } }, 'Remove')))));
@@ -428,7 +438,7 @@ function addMediaServerForm(onAdded) {
 async function tabLibraries(body) {
   const status = h('div', {});
   const list = h('div', {});
-  body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks']),
+  body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'clips', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks']),
     h('h3', {}, 'Or read libraries from a media server'),
     h('p', { class: 'note' }, 'Jellyfin / Emby for TV and films, Navidrome for music. WBTV reads titles, genres and pictures through the server API and plays the originals from it, so channels are built just like from folders. The key (or, for Navidrome, a login token; the password is not kept) stays on the WBTV server. See the README for when folders are the better choice.'),
     addMediaServerForm(() => { reload(); poll(); }),

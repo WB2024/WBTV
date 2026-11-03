@@ -39,14 +39,14 @@ test('audiobooks are one station by default, and one channel per book when switc
   assert.equal(radioChannels(db).find((c) => c.name === 'Audiobooks').item_count, 0, 'the old station is left empty, not deleted');
 });
 
-test('a per-book channel plays its chapters in order and then loops from chapter one', () => {
+test('a per-book channel plays its chapters in order and then loops from chapter one', async () => {
   const { db, lib, item } = fresh();
   const a = lib('Audiobooks', 'talk_audiobooks');
   // track numbers deliberately inserted out of order
   for (const n of [5, 2, 9, 1, 7, 3, 8, 4, 6]) item(a, 'Long Book', n, 1800);
   db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(`talk_per_title_${a}`, '1');
   inferChannels(db);
-  ensureSchedule(db, Date.now() / 1000);
+  await ensureSchedule(db, Date.now() / 1000);
   const ch = db.prepare("SELECT id FROM channels WHERE kind='radio' AND item_count>0").get().id;
   const seq = db.prepare('SELECT i.episode FROM programmes p JOIN items i ON i.id=p.item_id WHERE p.channel_id=? ORDER BY p.start').all(ch).map((r) => r.episode);
   assert.ok(seq.length > 18, `planned ${seq.length} chapters`); // more than two full passes through the book

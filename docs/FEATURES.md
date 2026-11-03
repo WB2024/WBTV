@@ -17,6 +17,13 @@ The complete feature list, by area. For what's new in each version see the [rele
 - Minimum channel size, genre channels for every show, movie studio/decade channels and the films needed for a studio channel are all adjustable.
 - Channel search box, and *Enable shown* for bulk switching. Empty channels (their library was removed) are marked *empty* and can be removed with one click.
 
+## Channel groups
+
+- Every TV, movie, music-video and clips library can be given a **channel group** (Setup > Libraries). Libraries that share a group name become **one channel**: for example *Stand Up Films*, *Stand Up Shows* and their *Unmanaged* folders all in the group "Stand Up".
+- Each library chooses how it becomes channels: **genre / studio channels** (the default), **one channel** (only the group channel), or **both**.
+- **Clips / interviews** is a library type for short videos of every kind: one channel, shuffled back to back, no ad breaks.
+- `tools/jfplan.mjs` reads a Jellyfin server and proposes a matching set of WBTV libraries and groups (read-only).
+
 ## The schedule
 
 - **A real, persistent schedule**, planned ahead (about 14 hours) and saved. The guide, the stream and the XMLTV feed always agree.

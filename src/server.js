@@ -133,7 +133,7 @@ app.post('/api/libraries', async (req, reply) => {
       return reply.code(500).send({ error: 'could not add the library: ' + (e?.message || e) });
     }
   }
-  if (!['movies', 'tv', 'music', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks', 'iptv', 'ads', 'ads_tv', 'ads_movies', 'ads_idents'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
+  if (!['movies', 'tv', 'music', 'clips', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks', 'iptv', 'ads', 'ads_tv', 'ads_movies', 'ads_idents'].includes(type)) return reply.code(400).send({ error: 'invalid library type' });
   let real;
   let label;
   if (type === 'iptv') {
@@ -162,7 +162,27 @@ app.post('/api/libraries', async (req, reply) => {
 // choose how a spoken-word library becomes channels: one per show / book, or one station for the whole library
 app.patch('/api/libraries/:id', async (req, reply) => {
   const lib = db.prepare('SELECT id, type FROM libraries WHERE id=?').get(req.params.id);
-  if (!lib || !String(lib.type).startsWith('talk_')) return reply.code(400).send({ error: 'only podcast, audiobook and interview libraries have this option' });
+  if (!lib) return reply.code(404).send({ error: 'no such library' });
+  if (req.body?.path !== undefined || req.body?.name !== undefined) { // re-point a library at another folder (its items are kept; the next scan sorts out what moved) or rename it
+    if (req.body.name !== undefined && String(req.body.name).trim()) db.prepare('UPDATE libraries SET name=? WHERE id=?').run(String(req.body.name).trim().slice(0, 80), lib.id);
+    if (req.body.path !== undefined) {
+      const real = safePath(req.body.path);
+      if (!real || !fs.existsSync(real) || !fs.statSync(real).isDirectory()) return reply.code(400).send({ error: 'folder not found / not allowed' });
+      if (db.prepare('SELECT 1 FROM libraries WHERE path=? AND id<>?').get(real, lib.id)) return reply.code(409).send({ error: 'another library already uses that folder' });
+      console.log(`[libraries] library ${lib.id} now points at ${real}`);
+      db.prepare('UPDATE libraries SET path=? WHERE id=?').run(real, lib.id);
+      runScan([lib.id]);
+    }
+  }
+  if (req.body?.group !== undefined || req.body?.groupMode !== undefined) { // channel group and how it becomes channels
+    const mode = req.body.groupMode;
+    if (mode !== undefined && !['inferred', 'single', 'both'].includes(mode)) return reply.code(400).send({ error: 'groupMode must be inferred, single or both' });
+    if (req.body.group !== undefined) db.prepare('UPDATE libraries SET channel_group=? WHERE id=?').run(String(req.body.group || '').trim().slice(0, 60) || null, lib.id);
+    if (mode !== undefined) db.prepare('UPDATE libraries SET group_mode=? WHERE id=?').run(mode, lib.id);
+    inferChannels(db); await rescheduleFuture(db);
+    return { ok: true };
+  }
+  if (!String(lib.type).startsWith('talk_')) return reply.code(400).send({ error: 'only podcast, audiobook and interview libraries have this option' });
   if (req.body?.perTitle !== undefined) {
     db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(`talk_per_title_${lib.id}`, req.body.perTitle ? '1' : '0');
     inferChannels(db); await rescheduleFuture(db);

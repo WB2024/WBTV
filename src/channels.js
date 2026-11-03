@@ -102,24 +102,27 @@ export function talkPerTitle(db, libId, libType) {
   return v === '1' ? true : v === '0' ? false : libType === 'talk_podcasts';
 }
 
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+
 export function inferChannels(db) {
   const st = getSettings(db);
   const minSec = st.minChannelMinutes * 60;
 
   const rows = db.prepare(`
-    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.album, i.path, i.library_id, l.name AS lib_name, l.type AS lib_type, l.path AS lib_path,
+    SELECT i.id, i.kind, i.show_id, i.year, i.runtime, i.studios, i.genres, i.artist, i.album, i.path, i.library_id, l.name AS lib_name, l.type AS lib_type, l.path AS lib_path, l.channel_group AS grp, l.group_mode AS gmode,
       s.studios AS s_studios, s.genres AS s_genres
     FROM items i LEFT JOIN shows s ON s.id = i.show_id LEFT JOIN libraries l ON l.id = i.library_id WHERE i.runtime > 0`).all();
 
   // A "unit" is a whole show (all its episodes stay together) or a single movie.
   const units = new Map();
   for (const r of rows) {
-    const solo = r.kind === 'movie' || r.kind === 'musicvideo' || r.kind === 'track' || r.kind === 'talk';
+    const solo = r.kind === 'movie' || r.kind === 'musicvideo' || r.kind === 'track' || r.kind === 'talk' || r.kind === 'clip';
     const key = solo ? `m${r.id}` : `s${r.show_id}`;
-    const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : r.kind === 'talk' ? 'talk' : 'tv';
+    const ukind = r.kind === 'movie' ? 'movie' : r.kind === 'musicvideo' ? 'music' : r.kind === 'track' ? 'radio' : r.kind === 'talk' ? 'talk' : r.kind === 'clip' ? 'clip' : 'tv';
     let u = units.get(key);
     if (!u) {
-      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map(), lib: r.library_id, libName: r.lib_name, libType: r.lib_type, album: r.album, title: talkTitle(r) };
+      u = { kind: ukind, ids: [], seconds: 0, year: r.year, studios: new Map(), genres: new Map(), lib: r.library_id, libName: r.lib_name, libType: r.lib_type, album: r.album, title: talkTitle(r),
+        grp: String(r.grp || '').trim(), mode: ukind === 'clip' ? 'single' : (r.gmode || 'inferred') }; // clips and interviews are only ever a channel of their own
       units.set(key, u);
     }
     u.ids.push(r.id); u.seconds += r.runtime;
@@ -135,7 +138,7 @@ export function inferChannels(db) {
   const films = new Map();
   const bump = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
   for (const u of units.values()) {
-    if (u.kind === 'talk') continue; // spoken-word libraries get one station each, not genre/decade channels
+    if (u.kind === 'talk' || u.kind === 'clip' || u.mode === 'single') continue; // those get a channel of their own, not genre / decade / studio channels
     if (u.kind === 'tv') for (const k of u.studios.keys()) bump(secs.tv.studio, k, u.seconds);
     for (const k of u.genres.keys()) bump(secs[u.kind].genre, k, u.seconds);
     if (u.kind === 'music' || u.kind === 'radio') { if (u.year) bump(secs[u.kind].decade, Math.floor(u.year / 10) * 10, u.seconds); }
@@ -148,12 +151,17 @@ export function inferChannels(db) {
   const assign = new Map(); // channel key -> { kind, name, ids:Set }
   const put = (key, kind, name, ids) => {
     const c = assign.get(key) || { kind, name, ids: new Set() };
+    if (c.kind !== kind && key.startsWith('group:') && c.kind !== 'music' && kind !== 'music') c.kind = 'tv'; // films and shows in one group: scheduled as TV
     for (const id of ids) c.ids.add(id);
     assign.set(key, c);
   };
 
   for (const u of units.values()) {
     let placed = false;
+    // a channel group: libraries that share a group name become one channel ("Stand Up" = Stand Up Films + Stand Up Shows, Managed + Unmanaged)
+    const gname = u.kind === 'talk' ? '' : (u.grp || (u.mode === 'single' ? String(u.libName || '').trim() : ''));
+    if (gname && (u.mode === 'single' || u.mode === 'both')) put(`group:${slug(gname)}`, u.kind === 'movie' ? 'movie' : u.kind === 'tv' ? 'tv' : 'music', gname, u.ids);
+    if (u.mode === 'single' && u.kind !== 'talk') continue;
     if (u.kind === 'talk') {
       // one channel per show / book when the library is set that way (the default for podcasts), always playing in order and looping;
       // otherwise one station per spoken-word library, named after the library
