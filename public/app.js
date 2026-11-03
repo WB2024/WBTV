@@ -548,6 +548,7 @@ async function tabChannels(body) {
   body.append(
     h('div', { class: 'row2' }, q, h('button', { onclick: bulk(true) }, 'Enable shown'), h('button', { onclick: bulk(false) }, 'Disable shown')),
     h('div', { class: 'row2' }, h('button', { onclick: async () => { await api('/api/channels/rebuild', { method: 'POST', body: {} }); renderSetup(); } }, 'Re-infer channels'),
+      chans.some((c) => !c.item_count && c.kind !== 'live') ? h('button', { class: 'danger', title: 'Delete every channel that has nothing in it', onclick: async () => { if (confirm(`Remove ${chans.filter((c) => !c.item_count && c.kind !== 'live').length} empty channels?`)) { await api('/api/channels', { method: 'DELETE' }); renderSetup(); } } }, 'Remove empty channels') : null,
       h('span', { class: 'note' }, `${chans.filter((c) => c.item_count).length} channels. Rebuilt automatically after every scan; your renames and numbers are kept. How many get created is controlled in the Settings tab.`)),
     chans.length ? h('table', {}, h('tr', {}, ['No.', 'Name', 'Type', 'Items', 'Source', 'On', 'Logo'].map((t) => h('th', {}, t))), rows) : h('p', { class: 'note' }, 'No channels yet — add a library first.'));
 }

@@ -52,3 +52,16 @@ test('a per-book channel plays its chapters in order and then loops from chapter
   assert.ok(seq.length > 18, `planned ${seq.length} chapters`); // more than two full passes through the book
   for (let i = 0; i < seq.length; i++) assert.equal(seq[i], (i % 9) + 1, `position ${i}: ${seq.join(',')}`);
 });
+
+test('a podcast show split into seasons by its tags is still one channel, named after its folder', () => {
+  const db = openDb(fs.mkdtempSync(path.join(os.tmpdir(), 'wbtv-talk-')));
+  const p = Number(db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run('Podcasts', '/mnt/Podcasts', 'talk_podcasts').lastInsertRowid);
+  const add = (rel, album, n) => db.prepare(`INSERT INTO items(library_id,kind,path,title,runtime,probed,studios,genres,actors,artist,album,episode)
+    VALUES (?,'talk',?,?,900,1,'[]','["x"]','[]','Host',?,?)`).run(p, `/mnt/Podcasts/${rel}`, `Ep ${n}`, album, n);
+  add('XFM Radio Show/Series 0/a.mp3', 'XFM Radio Show - Series 0', 1);
+  add('XFM Radio Show/Series 1/b.mp3', 'XFM Radio Show - Series 1', 2);
+  add('XFM Radio Show/Series 2/c.mp3', 'XFM Radio Show - Series 2', 3);
+  add('Happy Place/d.mp3', '', 1);
+  inferChannels(db);
+  assert.deepEqual(radioChannels(db).map((c) => [c.name, c.item_count]), [['Happy Place', 1], ['XFM Radio Show', 3]]);
+});
