@@ -13,6 +13,8 @@ with the audio played over it is rejected). Needs: python 3.9+, yt-dlp (pip inst
   python mvdl.py list "Morrissey"           that artist's videos on MusicBrainz, marked have / missing
   python mvdl.py get  "Morrissey" [-n]      download the missing ones (-n = dry run; --all-artists to do every artist)
   python mvdl.py top [20] [-n]              your 20 biggest artists (most songs in Navidrome): download all their missing videos
+  python mvdl.py top 20 --lists DIR          write an empty Artist.txt per top artist; paste YouTube links in (one per line)
+  python mvdl.py batch <file.txt | folder> [-n]   download every link in the list(s); the file name is the artist
   python mvdl.py url  <youtube-url | "Artist - Title"> [--force]     one video: a link, or words (searches "Artist - Title (official music video)")
 """
 import argparse, getpass, hashlib, json, os, re, secrets, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -150,10 +152,10 @@ def ytdlp(*a, **k):
     cmd = [exe] if exe else [sys.executable, '-m', 'yt_dlp']
     return subprocess.run(cmd + ['--no-warnings', '--no-playlist'] + list(a), capture_output=True, text=True, **k)
 
-def candidates(artist, title, direct):
+def candidates(artist, title, direct, only=False):
     """Metadata of possible uploads, best first: the MusicBrainz-linked video, then a YouTube search."""
     infos = []
-    for q in ([direct] if direct else []) + [f'ytsearch5:{artist} - {title} (official music video)']:
+    for q in ([direct] if direct else []) + ([] if only and direct else [f'ytsearch5:{artist} - {title} (official music video)']):
         r = ytdlp('-J', q)
         try: j = json.loads(r.stdout)
         except Exception: continue
@@ -193,7 +195,7 @@ def place(root, artist, title, year, genres, video, thumb):
 def fetch_one(root, artist, title, year, genres, direct=None, force=False, dry=False):
     print(f'  {artist} - {title}' + (f' ({year})' if year else ''), end=' ... ', flush=True)
     if dry: print('would download'); return True
-    cands = candidates(artist, title, direct); why = []
+    cands = candidates(artist, title, direct, only=force); why = []
     if not cands: print('no matching upload found'); return False
     for info in cands:
         bad = None if force else (judge_upload(info) or judge_official(info, artist))
@@ -256,8 +258,52 @@ def cmd_top(a):
     for ar in arts: ar['songs'] = sum(al.get('songCount', 0) for al in nd(c, 'getArtist', id=ar['id']).get('artist', {}).get('album', []))
     arts = sorted(arts, key=lambda z: -z['songs'])[:a.count]
     print('Top artists by song count: ' + ', '.join(f"{z['name']} ({z['songs']})" for z in arts))
+    if a.lists:  # just make an empty list file per artist, to fill with links by hand
+        os.makedirs(a.lists, exist_ok=True)
+        for z in arts:
+            f = os.path.join(a.lists, file_safe(z['name']) + '.txt')
+            if not os.path.exists(f): open(f, 'w', encoding='utf-8').write(f"# {z['name']}: one YouTube link per line (optionally: link | Song title). Lines starting with # are ignored.\n")
+        return print(f'Wrote {len(arts)} list files in {a.lists}')
     a.artist, a.all_artists, a.arts = None, False, arts
     cmd_get(a)
+
+def read_list(path):
+    """A list file is named after the artist ('Iggy Pop.txt'), or starts with 'artist: Name'. Lines: <link>  or  <link> | <title>. Returns (artist, [(link, title|None)])."""
+    artist, items = os.path.splitext(os.path.basename(path))[0].strip(), []
+    for raw in open(path, encoding='utf-8-sig'):
+        line = raw.strip()
+        if not line or line.startswith('#'): continue
+        m = re.match(r'artist\s*[:=]\s*(.+)', line, re.I)
+        if m: artist = m.group(1).strip(); continue
+        link, _, title = line.partition('|')
+        link = link.strip()
+        if re.match(r'https?://', link): items.append((link, title.strip() or None))
+        else: print(f'  skipping a line that is not a link: {line[:60]}')
+    return artist, items
+
+def cmd_batch(a):
+    c = conf(); need(c)
+    files = [a.path] if os.path.isfile(a.path) else sorted(os.path.join(a.path, f) for f in os.listdir(a.path) if f.lower().endswith('.txt'))
+    if not files: raise SystemExit('No .txt files found there.')
+    ok = bad = 0
+    for f in files:
+        artist, items = read_list(f)
+        ar = find_artist(c, artist); artist = ar['name'] if ar['id'] else artist
+        print(f'{artist}: {len(items)} links ({os.path.basename(f)})')
+        genres = nd_genre(c, ar['id']) if ar['id'] else []
+        for link, title in items:
+            have = library_index(c['root'])
+            r = ytdlp('-J', link)
+            try: info = json.loads(r.stdout)
+            except Exception: print(f'  {link} ... yt-dlp could not read it'); bad += 1; continue
+            t = title or info.get('track') or clean_title(re.sub(r'^\s*' + re.escape(artist) + r'\s*[-:–]\s*', '', info.get('title', ''), flags=re.I))
+            t = re.sub(r'\s*[\(\[]\s*official[^)\]]*[\)\]]\s*$', '', t, flags=re.I).strip()
+            if have_it(have, artist, t): print(f'  {artist} - {t} ... already have it'); continue
+            year = str(info.get('release_year') or str(info.get('upload_date', ''))[:4] or '')
+            if a.n: print(f'  {artist} - {t} ... would download'); continue
+            if fetch_one(c['root'], artist, t, year, genres, link, force=True): ok += 1
+            else: bad += 1
+    print(f'{ok} saved, {bad} failed' if not a.n else 'dry run only')
 
 def cmd_get(a):
     c = conf(); need(c); have = library_index(c['root'])
@@ -299,7 +345,8 @@ def main():
     q = s.add_parser('get'); q.add_argument('artist', nargs='?'); q.add_argument('-n', action='store_true', help='dry run')
     q.add_argument('--all-artists', action='store_true'); q.add_argument('--limit', type=int, default=50); q.set_defaults(f=cmd_get)
     q = s.add_parser('top', help='download missing videos for your top artists by song count'); q.add_argument('count', nargs='?', type=int, default=20)
-    q.add_argument('-n', action='store_true', help='dry run'); q.add_argument('--limit', type=int, default=50); q.set_defaults(f=cmd_top)
+    q.add_argument('-n', action='store_true', help='dry run'); q.add_argument('--limit', type=int, default=50); q.add_argument('--lists', metavar='DIR', help='instead of downloading, write an empty list file per artist into DIR'); q.set_defaults(f=cmd_top)
+    q = s.add_parser('batch', help='download the links in a list file, or every .txt in a folder'); q.add_argument('path'); q.add_argument('-n', action='store_true', help='dry run'); q.set_defaults(f=cmd_batch)
     q = s.add_parser('url'); q.add_argument('url'); q.add_argument('--artist'); q.add_argument('--title'); q.add_argument('--force', action='store_true'); q.set_defaults(f=cmd_url)
     a = p.parse_args()
     if not a.cmd: p.print_help(); return

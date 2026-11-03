@@ -143,7 +143,7 @@ function extendChannel(db, ch, settings, ads, now, horizon, idents = []) {
     const lib = db.prepare('SELECT type FROM libraries WHERE id=?').get(items[0].library_id);
     return extendTalk(db, ch, items, t, horizon, lib?.type || 'talk_interviews');
   }
-  if (ch.kind === 'music' || ch.kind === 'radio') return extendRotation(db, ch, items, t, horizon);
+  if (ch.kind === 'music' || ch.kind === 'clips' || ch.kind === 'radio') return extendRotation(db, ch, items, t, horizon);
   const pick = makePicker(db, ch, items, settings);
 
   // "coming up next" announcements need to know the next few programmes, so we plan a few items ahead

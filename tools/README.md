@@ -37,3 +37,6 @@ Artists come from Navidrome, video lists from MusicBrainz, files from yt-dlp. Ly
     python tools/mvdl.py list "Morrissey"        # what MusicBrainz knows, marked have / MISSING
     python tools/mvdl.py get "Morrissey" -n      # dry run; drop -n to download, or use --all-artists
     python tools/mvdl.py url <youtube-url> --force   # one chosen video (--force skips the checks)
+
+**List files:** `python tools/mvdl.py top 20 --lists lists` writes an empty `Artist.txt` per top artist. Paste YouTube links in (one per line, optionally `link | Song title`; `#` lines are ignored), then
+`python tools/mvdl.py batch lists` (or a single file; `-n` for a dry run) downloads them all into `Artist/Artist - Title.mp4` with poster and nfo. Links you choose yourself skip the official-upload checks.

@@ -151,7 +151,7 @@ export function inferChannels(db) {
   const assign = new Map(); // channel key -> { kind, name, ids:Set }
   const put = (key, kind, name, ids) => {
     const c = assign.get(key) || { kind, name, ids: new Set() };
-    if (c.kind !== kind && key.startsWith('group:') && c.kind !== 'music' && kind !== 'music') c.kind = 'tv'; // films and shows in one group: scheduled as TV
+    if (c.kind !== kind && key.startsWith('group:') && !['music', 'clips'].includes(c.kind) && !['music', 'clips'].includes(kind)) c.kind = 'tv'; // films and shows in one group: scheduled as TV
     for (const id of ids) c.ids.add(id);
     assign.set(key, c);
   };
@@ -160,7 +160,7 @@ export function inferChannels(db) {
     let placed = false;
     // a channel group: libraries that share a group name become one channel ("Stand Up" = Stand Up Films + Stand Up Shows, Managed + Unmanaged)
     const gname = u.kind === 'talk' ? '' : (u.grp || (u.mode === 'single' ? String(u.libName || '').trim() : ''));
-    if (gname && (u.mode === 'single' || u.mode === 'both')) put(`group:${slug(gname)}`, u.kind === 'movie' ? 'movie' : u.kind === 'tv' ? 'tv' : 'music', gname, u.ids);
+    if (gname && (u.mode === 'single' || u.mode === 'both')) put(`group:${slug(gname)}`, u.kind === 'movie' ? 'movie' : u.kind === 'tv' ? 'tv' : u.kind === 'clip' ? 'clips' : 'music', gname, u.ids);
     if (u.mode === 'single' && u.kind !== 'talk') continue;
     if (u.kind === 'talk') {
       // one channel per show / book when the library is set that way (the default for podcasts), always playing in order and looping;

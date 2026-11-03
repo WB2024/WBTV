@@ -69,7 +69,7 @@ test('clips and interviews form one shuffled channel of their own', () => {
   const l = lib('Interviews', 'clips');
   for (const t of ['One', 'Two', 'Three', 'Four']) clip(l, t);
   inferChannels(db);
-  assert.deepEqual(channels().map((c) => [c.key, c.name, c.kind, c.item_count]), [['group:interviews', 'Interviews', 'music', 4]]);
+  assert.deepEqual(channels().map((c) => [c.key, c.name, c.kind, c.item_count]), [['group:interviews', 'Interviews', 'clips', 4]]);
 });
 
 test('a mixed films-and-shows group channel actually schedules both, and a clips channel schedules back to back', async () => {
