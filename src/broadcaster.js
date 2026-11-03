@@ -375,7 +375,7 @@ export class Broadcaster {
   }
 
   /** Filter graph for audio-only programming: cover art, now-playing text and a live waveform. Input 0 = audio, 1 = background, 2 = art. */
-  audioVisual({ hasArt, label, title, sub1, sub2, ass }) {
+  audioVisual({ hasArt, label, title, sub1, sub2, ass, style = 'classic' }) {
     const { width: W, height: H } = cfg;
     const wh = Math.round(H * 0.2), artH = Math.round(H * 0.5);
     const tx = hasArt ? Math.round(W * 0.06 + artH + W * 0.04) : Math.round(W * 0.08);
@@ -383,8 +383,14 @@ export class Broadcaster {
     const dt = (file, y, size, color) => `drawtext=${font}textfile=${file}:expansion=none:x=${tx}:y=${y}:fontsize=${size}:fontcolor=${color}`;
     const files = { l: this.textFile('av_l', label), t: this.textFile('av_t', title), a: this.textFile('av_a', sub1), b: this.textFile('av_b', sub2) };
     let f = '[0:a]aresample=48000,aformat=channel_layouts=stereo,asplit=2[a][w];' +
-      `[w]volume=3,alimiter=limit=0.95,showwaves=s=${W}x${wh}:mode=cline:colors=cyan:rate=25:scale=sqrt:draw=full,format=yuv420p[wv];[1:v]format=yuv420p[bg];[bg][wv]overlay=0:${H - wh - Math.round(H * 0.04)}[b1];`;
-    f += hasArt ? `[2:v]scale=-2:${artH},format=yuv420p[art];[b1][art]overlay=${Math.round(W * 0.06)}:${Math.round(H * 0.14)}[b2];` : '[b1]null[b2];';
+      (style === 'bars'
+        ? `[w]volume=2,alimiter=limit=0.95,showfreqs=s=${W}x${wh}:mode=bar:fscale=log:ascale=sqrt:win_size=1024:colors=0x35d0ff|0xc060ff:rate=25,format=rgba,colorkey=0x000000:0.12:0.05[wv];`
+        : `[w]volume=3,alimiter=limit=0.95,showwaves=s=${W}x${wh}:mode=cline:colors=cyan:rate=25:scale=sqrt:draw=full,${style === 'blur' ? 'format=rgba,colorkey=0x000000:0.1:0.05' : 'format=yuv420p'}[wv];`) +
+      (style === 'blur' && hasArt // the cover, enlarged, blurred and darkened, fills the screen behind everything
+        ? `[2:v]split=2[s1][s2];[s2]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},gblur=sigma=30,eq=brightness=-0.3,format=yuv420p[bg];`
+        : '[1:v]format=yuv420p[bg];') +
+      `[bg][wv]overlay=0:${H - wh - Math.round(H * 0.04)}[b1];`;
+    f += hasArt ? `[${style === 'blur' ? 's1' : '2:v'}]scale=-2:${artH},format=yuv420p[art];[b1][art]overlay=${Math.round(W * 0.06)}:${Math.round(H * 0.14)}[b2];` : '[b1]null[b2];';
     f += `[b2]${dt(files.l, Math.round(H * 0.16), Math.round(H * 0.04), '0xffd400')},${dt(files.t, Math.round(H * 0.23), Math.round(H * 0.07), 'white')},` +
       `${dt(files.a, Math.round(H * 0.34), Math.round(H * 0.05), '0x9fd8ff')},${dt(files.b, Math.round(H * 0.42), Math.round(H * 0.038), '0xaab4d8')}${ass ? `,subtitles=filename=${fp(ass)}:fontsdir=${fp(path.dirname(cfg.fontFile))}` : ''},format=yuv420p${videoTail()}[v]`;
     return fp(f);
@@ -413,7 +419,7 @@ export class Broadcaster {
         }
       }
     } catch { ass = null; }
-    const filter = this.audioVisual({ ass, hasArt: !!art, label: m.kind === 'talk' ? (m.label || 'ON AIR').toUpperCase() : 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
+    const filter = this.audioVisual({ ass, style: getSettings(this.db).radioStyle, hasArt: !!art, label: m.kind === 'talk' ? (m.label || 'ON AIR').toUpperCase() : 'NOW PLAYING', title: m.title || '', sub1: m.artist || '', sub2: [m.album, m.year].filter(Boolean).join('  ·  ') });
     args.push('-t', dur.toFixed(3), '-filter_complex', filter, '-map', '[v]', '-map', '[a]', ...e.codec);
     return this.runFfmpeg(args);
   }

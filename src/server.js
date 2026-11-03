@@ -441,7 +441,7 @@ app.put('/api/settings', async (req) => {
   const after = setSettings(db, body);
   if (before.hwEncoder !== after.hwEncoder) await detectHw(after.hwEncoder);
   if (before.streamHeight !== after.streamHeight) applyStreamSize(after.streamHeight);
-  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'lyrics', 'streamHeight', 'language', 'subtitleMode']; // these never need a re-plan
+  const scanKeys = ['autoScan', 'scanIntervalMinutes', 'scanOnStartup', 'hwEncoder', 'channelBug', 'lyrics', 'radioStyle', 'streamHeight', 'language', 'subtitleMode']; // these never need a re-plan
   const plan = (s) => JSON.stringify(Object.entries(s).filter(([k]) => !scanKeys.includes(k)));
   if (plan(before) !== plan(after)) {
     const inferKeys = ['minChannelMinutes', 'tvGenreChannelsForAll', 'movieStudioChannels', 'movieStudioMinFilms', 'movieDecadeChannels'];

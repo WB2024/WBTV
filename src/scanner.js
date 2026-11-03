@@ -307,23 +307,25 @@ async function scanRadio(db, lib, progress) {
 }
 
 /**
- * Tracks scanned before covers were read have no picture. Look once per album folder (a few hundred folders per scan, so a big
- * library fills in over a day without a burst of work): the first track's embedded art goes to every track of that folder.
+ * Tracks scanned before covers were read have no picture. Look once per album folder (for up to ~25 seconds per scan, four folders at a time): the first track's embedded art goes to every track of that folder.
  * A folder with no art is marked with '' so it is not tried again.
  */
-async function backfillCovers(db, lib, maxDirs = 400) {
+async function backfillCovers(db, lib, budgetMs = 25000) {
   const rows = db.prepare('SELECT id,path FROM items WHERE library_id=? AND poster IS NULL ORDER BY path').all(lib.id);
   if (!rows.length) return;
   const byDir = new Map();
   for (const r of rows) { const d = path.dirname(r.path); (byDir.get(d) || byDir.set(d, []).get(d)).push(r); }
   const set = db.prepare('UPDATE items SET poster=? WHERE id=?');
-  let n = 0;
-  for (const [dir, list] of byDir) {
-    if (n++ >= maxDirs) break;
-    const st = await fs.stat(list[0].path).catch(() => null);
-    const cov = st ? await embeddedCover(list[0].path, st, 'album|' + dir) : null;
-    tx(db, () => { for (const r of list) set.run(cov || '', r.id); });
-  }
+  const queue = [...byDir], deadline = Date.now() + budgetMs;
+  const worker = async () => { // four at a time, for up to ~25 seconds per scan: a big library is covered in a few scans, not a few days
+    for (let job = queue.shift(); job && Date.now() < deadline; job = queue.shift()) {
+      const [dir, list] = job;
+      const st = await fs.stat(list[0].path).catch(() => null);
+      const cov = st ? await embeddedCover(list[0].path, st, 'album|' + dir).catch(() => null) : null;
+      tx(db, () => { for (const r of list) set.run(cov || '', r.id); });
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
 async function scanAdsLibrary(db, lib, progress) {

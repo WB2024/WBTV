@@ -120,6 +120,7 @@ export const tx = (db, fn) => {
 const DEFAULTS = {
   autoDaypart: true,       // lean towards what suits the time of day (kids after school, horror late, cartoons on Saturday morning)
   eraAds: true,            // prefer adverts from the same era as the programme (needs a year in the ad's title or folder name)
+  radioStyle: 'classic',   // how a radio station looks: classic (waveform) | blur (the cover blurred behind everything) | bars (a frequency-bar visualizer)
   lyrics: true,            // show lyrics (.lrc / .srt / .txt beside the file, or in its tags) on music radio
   language: 'eng',         // preferred language: its audio track is used, and its subtitles are burned in when a file has no audio in it
   subtitleMode: 'foreign', // off | foreign (only when there is no audio in your language, plus forced subtitles) | always
@@ -155,7 +156,7 @@ const RANGES = {
   pauseBufferMinutes: [0, 30], scanIntervalMinutes: [5, 1440], promoCount: [1, 4], promoMaxSeconds: [15, 120], alignMinutes: [1, 60],
   breakEveryMinutes: [5, 180], breakLengthMinutes: [0.5, 15], minChannelMinutes: [0, 1000], movieStudioMinFilms: [1, 1000],
 };
-const ENUMS = { hwEncoder: ['auto', 'none', 'vaapi', 'nvenc'], streamHeight: [480, 576, 720], subtitleMode: ['off', 'foreign', 'always'], language: ['eng', 'fre', 'ger', 'spa', 'ita', 'jpn', 'kor', 'chi', 'rus', 'por', 'dut', 'wel'] };
+const ENUMS = { hwEncoder: ['auto', 'none', 'vaapi', 'nvenc'], streamHeight: [480, 576, 720], subtitleMode: ['off', 'foreign', 'always'], radioStyle: ['classic', 'blur', 'bars'], language: ['eng', 'fre', 'ger', 'spa', 'ita', 'jpn', 'kor', 'chi', 'rus', 'por', 'dut', 'wel'] };
 const TIMES = new Set(['signOffFrom', 'signOffTo']);
 /** The value to store/use for this setting, or undefined if what was given is not usable. */
 export function fitSetting(key, v) {
