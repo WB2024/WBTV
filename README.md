@@ -285,7 +285,7 @@ e.g. `192.168.1.110:8420`. Needs Android 8 or newer; tested on a Fire TV (Androi
 
 <p align="center">
   <img src="Images/Screenshots/tv-guide.gif" alt="The Android TV app: opening the guide with the remote and moving through channels and programmes" width="640"><br>
-  <sub>Recorded on a Fire TV: Right opens the guide; the d-pad then moves through channels and through time.</sub>
+  <sub>Recorded on a Fire TV in the Sky-style Satellite theme: Right opens the guide, then flick through channels with the d-pad. The poster, plot and what's on update as you go.</sub>
 </p>
 
 <p align="center">
