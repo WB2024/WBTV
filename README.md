@@ -27,6 +27,55 @@
   <sub>The guide, browsing and filtering a real library: TV, Movies, Music, Radio, Live and Networks.</sub>
 </p>
 
+## Quick start: one container, one volume
+
+```bash
+docker run -d --name wbtv --restart unless-stopped -p 8420:8080 -e TZ=Europe/London \
+  -v "$PWD/config:/config" -v /path/to/your/media:/media:ro --tmpfs /tmp/wbtv:size=2g \
+  wb20244/wbtv:latest
+```
+
+Change `/path/to/your/media` to your media folder (it is mounted **read-only**, WBTV never changes your files) and your timezone. That's the whole install.
+
+<details>
+<summary>Prefer Docker Compose?</summary>
+
+```yaml
+services:
+  wbtv:
+    image: wb20244/wbtv:latest
+    container_name: wbtv
+    restart: unless-stopped
+    ports:
+      - 8420:8080
+    environment:
+      - TZ=Europe/London              # your timezone, so the guide matches your clock
+    volumes:
+      - ./config:/config              # database, covers, voices, downloaded ads
+      - /path/to/your/media:/media:ro # your media, read-only
+    tmpfs:
+      - /tmp/wbtv:size=2g             # live stream segments + the pause/rewind buffer (RAM)
+```
+
+```bash
+docker compose up -d
+```
+</details>
+
+Then:
+
+1. Open **`http://<your-server>:8420`** and click **Setup**.
+2. **Libraries > Add**: browse to your TV, movie, music, or audiobook folders and say what each one contains.
+3. Wait a minute for the first scan. Channels and the guide appear. Pick one and press **Enter**.
+
+That's it. Everything else (ad breaks, voice-overs, themes, idents, the Android TV app) is optional and one click away.
+
+**Good to know**
+- Mount your media at `/media` (or `/mnt`, `/data`) so the folder browser can see it. Other places: set `WBTV_BROWSE_ROOTS`.
+- You need roughly **one CPU core per channel being watched** (every watched channel is encoded live, and all viewers of a channel share one encode). Details in [performance](#performance).
+- Works on Unraid, Synology/QNAP (Container Manager), TrueNAS, Proxmox LXC and plain Linux. Images are published for **amd64**; an **arm64** build (Raspberry Pi 4/5, Apple silicon) is produced by CI, see [Status](#status).
+- Media can be anywhere Docker can read, including network shares. Rescans are incremental and quick.
+
 ---
 
 ## What is it?
@@ -66,55 +115,6 @@ to something else to watch it. WBTV does it the other way round.
 | Cost | **Free, MIT licensed** | Mostly free |
 
 > Want the full, fair comparison, including where ErsatzTV, Tunarr and FieldStation42 are ahead? See **[docs/COMPARISON.md](docs/COMPARISON.md)**.
-
-## Quick start (about a minute)
-
-You need Docker and a folder of media. Save this as `docker-compose.yml`, change the media path, and run it:
-
-```yaml
-services:
-  wbtv:
-    image: wb20244/wbtv:latest
-    container_name: wbtv
-    restart: unless-stopped
-    ports:
-      - 8420:8080
-    environment:
-      - TZ=Europe/London              # your timezone, so the guide matches your clock
-    volumes:
-      - ./config:/config              # database, covers, voices, downloaded ads
-      - /path/to/your/media:/media:ro # your media, read-only. WBTV never changes your files
-    tmpfs:
-      - /tmp/wbtv:size=2g             # live stream segments + the pause/rewind buffer (RAM)
-```
-
-```bash
-docker compose up -d
-```
-
-<details>
-<summary>Prefer <code>docker run</code>?</summary>
-
-```bash
-docker run -d --name wbtv --restart unless-stopped -p 8420:8080 -e TZ=Europe/London \
-  -v "$PWD/config:/config" -v /path/to/your/media:/media:ro --tmpfs /tmp/wbtv:size=2g \
-  wb20244/wbtv:latest
-```
-</details>
-
-Then:
-
-1. Open **`http://<your-server>:8420`** and click **Setup**.
-2. **Libraries > Add**: browse to your TV, movie, music, or audiobook folders and say what each one contains.
-3. Wait a minute for the first scan. Channels and the guide appear. Pick one and press **Enter**.
-
-That's it. Everything else (ad breaks, voice-overs, themes, idents, the Android TV app) is optional and one click away.
-
-**Good to know**
-- Mount your media at `/media` (or `/mnt`, `/data`) so the folder browser can see it. Other places: set `WBTV_BROWSE_ROOTS`.
-- You need roughly **one CPU core per channel being watched** (every watched channel is encoded live, and all viewers of a channel share one encode). Details in [performance](#performance).
-- Works on Unraid, Synology/QNAP (Container Manager), TrueNAS, Proxmox LXC and plain Linux. Images are published for **amd64**; an **arm64** build (Raspberry Pi 4/5, Apple silicon) is produced by CI, see [Status](#status).
-- Media can be anywhere Docker can read, including network shares. Rescans are incremental and quick.
 
 ## How channels are built
 
