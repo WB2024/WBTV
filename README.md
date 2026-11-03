@@ -16,6 +16,10 @@
   <a href="https://buymeacoffee.com/succinctrecords"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support%20WBTV-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" height="48"></a>
 </p>
 
+<p align="center">
+  <a href="https://launchorbit.co" target="_blank" rel="noopener noreferrer"><img src="https://launchorbit.co/api/badge?theme=dark&v=9" alt="View this product on Launch Orbit" width="240" height="64" /></a>
+</p>
+
 <p align="center"><b>WBTV is free, open source and always will be. If it brings you joy, a coffee keeps the updates coming. ☕</b></p>
 
 <p align="center">
