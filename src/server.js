@@ -233,7 +233,7 @@ app.get('/api/browse', async (req, reply) => {
 });
 
 // ---------------------------------------------------------------- channels / EPG
-const channelRow = `id, key, kind, COALESCE(name_override, auto_name) AS name, auto_name, name_override, number, enabled, item_count`;
+const channelRow = `id, key, kind, COALESCE(name_override, auto_name) AS name, auto_name, name_override, number, enabled, item_count, grp`;
 
 app.get('/api/channels', (req) => {
   const all = req.query.all === '1';

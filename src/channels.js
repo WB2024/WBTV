@@ -128,6 +128,7 @@ export function inferChannels(db) {
 
   // A "unit" is a whole show (all its episodes stay together) or a single movie.
   const units = new Map();
+  const idGrp = new Map(); // item id -> its library's channel group
   const songs = new Set(); // the same song on several releases (album, single, greatest hits, remaster) is played once
   for (const r of rows) {
     if (r.kind === 'track') {
@@ -144,6 +145,7 @@ export function inferChannels(db) {
       units.set(key, u);
     }
     u.ids.push(r.id); u.seconds += r.runtime;
+    if (r.grp && String(r.grp).trim()) idGrp.set(r.id, String(r.grp).trim());
     const studios = [...JSON.parse(r.s_studios || '[]'), ...JSON.parse(r.studios || '[]')];
     const genres = [...JSON.parse(r.s_genres || '[]'), ...JSON.parse(r.genres || '[]')];
     for (const s of new Set(studios)) { const n = normStudio(s); if (!u.studios.has(n.norm)) u.studios.set(n.norm, n); }
@@ -252,7 +254,7 @@ export function inferChannels(db) {
     const BASE = { music: 400, live: 600, radio: 800 };
     const freeFrom = (n) => { while (taken.has(n)) n++; return n; };
     const ins = db.prepare('INSERT INTO channels(key,kind,auto_name,number,enabled,item_count) VALUES(?,?,?,?,1,0)');
-    const upd = db.prepare('UPDATE channels SET auto_name=?, item_count=?, kind=? WHERE id=?'); // kind too: a group of films and shows is TV, whatever its first library was
+    const upd = db.prepare('UPDATE channels SET auto_name=?, item_count=?, kind=?, grp=? WHERE id=?'); // kind too: a group of films and shows is TV, whatever its first library was
     db.exec('DELETE FROM channel_items');
     const link = db.prepare('INSERT OR IGNORE INTO channel_items(channel_id,item_id) VALUES(?,?)');
 
@@ -267,10 +269,12 @@ export function inferChannels(db) {
         taken.add(num);
         ch = { id: Number(ins.run(key, c.kind, c.name, num).lastInsertRowid) };
       }
-      upd.run(c.name, c.ids.size, c.kind, ch.id);
+      const gc = new Map(); for (const id of c.ids) { const g = idGrp.get(id); if (g) gc.set(g, (gc.get(g) || 0) + 1); }
+      const top = [...gc.entries()].sort((a, b) => b[1] - a[1])[0]; // the group most of its programmes belong to
+      upd.run(c.name, c.ids.size, c.kind, top && top[1] * 2 >= c.ids.size ? top[0] : null, ch.id);
       for (const id of c.ids) link.run(ch.id, id);
     }
-    for (const [key, ch] of existing) if (!assign.has(key) && !key.startsWith('live:')) upd.run(ch.auto_name, 0, ch.kind, ch.id); // emptied channels (live ones: syncLiveChannels)
+    for (const [key, ch] of existing) if (!assign.has(key) && !key.startsWith('live:')) upd.run(ch.auto_name, 0, ch.kind, null, ch.id); // emptied channels (live ones: syncLiveChannels)
   });
 }
 

@@ -99,3 +99,14 @@ test('a group first created from a library of films becomes a TV channel once a 
   inferChannels(db);
   assert.equal(db.prepare("SELECT kind FROM channels WHERE key='group:stand-up'").get().kind, 'tv');
 });
+
+test('a channel remembers the channel group its programmes come from (the guide makes a chip per group)', () => {
+  const { lib, movie, channels, db } = fresh();
+  const a = lib('Stand Up Films', 'movies', 'Stand Up', 'single'), plain = lib('Films', 'movies');
+  movie(a, 'Film A'); movie(plain, 'Film B');
+  inferChannels(db);
+  const g = (key) => db.prepare('SELECT grp FROM channels WHERE key=?').get(key)?.grp;
+  assert.equal(g('group:stand-up'), 'Stand Up');
+  assert.equal(g('movie:genre:comedy'), null); // a genre channel made only from ungrouped libraries
+  assert.ok(channels().length >= 2);
+});

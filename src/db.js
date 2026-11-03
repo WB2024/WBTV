@@ -100,6 +100,7 @@ function migrate(db) {
   if (!icols.includes('album')) db.exec('ALTER TABLE items ADD COLUMN album TEXT');
   // older DBs: blocks.promo_id (announcement slots)
   if (!db.prepare('PRAGMA table_info(blocks)').all().some((c) => c.name === 'promo_id')) db.exec('ALTER TABLE blocks ADD COLUMN promo_id INTEGER');
+  if (!db.prepare('PRAGMA table_info(channels)').all().some((c) => c.name === 'grp')) db.exec('ALTER TABLE channels ADD COLUMN grp TEXT'); // the channel group its programmes come from (a chip in the guide)
   // libraries can be given a channel group (libraries sharing one merge into a channel) and a mode: inferred | single | both
   const lcols = db.prepare('PRAGMA table_info(libraries)').all().map((c) => c.name);
   if (!lcols.includes('channel_group')) db.exec('ALTER TABLE libraries ADD COLUMN channel_group TEXT');

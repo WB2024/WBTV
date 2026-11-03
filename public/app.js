@@ -41,7 +41,9 @@ const FILTERS = [
   ['network', 'Networks', (c) => (c.key || '').startsWith('tv:studio:')],
   ['genre', 'Genres', (c) => (c.key || '').includes(':genre:')],
 ];
-const filterFn = () => (FILTERS.find((f) => f[0] === S.filter) || FILTERS[0])[2];
+// one chip per channel group (set on a library in Setup), added to the fixed ones above
+const filters = () => [...FILTERS, ...[...new Set((S.allChannels || []).map((c) => c.grp).filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((g) => [`g:${g}`, g, (c) => c.grp === g])];
+const filterFn = () => (filters().find((f) => f[0] === S.filter) || FILTERS[0])[2];
 
 function applyFilter() {
   S.channels = S.allChannels.filter(filterFn());
@@ -54,15 +56,15 @@ function setFilter(id) {
   $('#guide').scrollTop = 0;
 }
 function cycleFilter(dir) {
-  const vis = FILTERS.filter(([id, , fn]) => id === 'all' || S.allChannels.some(fn));
+  const vis = filters().filter(([id, , fn]) => id === 'all' || S.allChannels.some(fn));
   const i = Math.max(0, vis.findIndex((f) => f[0] === S.filter));
   setFilter(vis[(i + dir + vis.length) % vis.length][0]);
 }
 function renderToolbar() {
   $('#toolbar').replaceChildren(
-    FILTERS.filter(([id, , fn]) => id === 'all' || id === S.filter || S.allChannels.some(fn)).map(([id, label, fn]) => h('button', { class: `chip ${id === S.filter ? 'on' : ''}`, onclick: () => setFilter(id) }, label, h('small', {}, String(S.allChannels.filter(fn).length)))),
+    filters().filter(([id, , fn]) => id === 'all' || id === S.filter || S.allChannels.some(fn)).map(([id, label, fn]) => h('button', { class: `chip ${id === S.filter ? 'on' : ''}`, onclick: () => setFilter(id) }, label, h('small', {}, String(S.allChannels.filter(fn).length)))),
     h('span', { class: 'hint' }, '[ ] to switch'));
-  $('#gname').textContent = (FILTERS.find((f) => f[0] === S.filter) || FILTERS[0])[1].toUpperCase();
+  $('#gname').textContent = (filters().find((f) => f[0] === S.filter) || FILTERS[0])[1].toUpperCase();
 }
 
 async function loadGuide(keepSel = true) {
