@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
+        id="https://github.com/WB2024/WBTV" version="0.1.0" viewmodes="fullscreen">
+  <tizen:application id="WbtvTV0001.WBTV" package="WbtvTV0001" required_version="4.0"/>
+  <name>WBTV</name>
+  <icon src="assets/icon.png"/>
+  <content src="index.html"/>
+  <access origin="*" subdomains="true"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/network.state"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable"
+                 encryption="disable" install-location="auto" hw-key-event="enable"/>
+  <feature name="http://tizen.org/feature/network.internet"/>
+</widget>

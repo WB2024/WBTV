@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WBTV</title>
+  <meta name="viewport" content="width=1920, height=1080">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="$WEBAPIS/webapis/webapis.js" onerror="void 0"></script>
+</head>
+<body>
+  <object id="av" type="application/avplayer"></object>
+  <video id="vid" playsinline></video>
+
+  <div id="setup" class="screen hidden">
+    <img src="assets/logo.png" class="logo" alt="WBTV">
+    <p>Server address</p>
+    <input id="addr" type="text" placeholder="192.168.1.110:8420" autocomplete="off">
+    <div id="setupMsg"></div>
+    <p class="hint">Press OK to type, then Done. Down + OK to connect.</p>
+    <button id="connect">Connect</button>
+  </div>
+
+  <div id="guide" class="screen hidden">
+    <div id="top"><img src="assets/logo.png" id="mini" alt=""><span id="clock"></span></div>
+    <div id="chips"></div>
+    <div id="main">
+      <div id="list"></div>
+      <div id="info"></div>
+    </div>
+    <div id="keys">▲▼ channel · ◀▶ chip row (up from top) · OK watch · ⏪⏩ chips · Back exit</div>
+  </div>
+
+  <div id="osd" class="hidden"></div>
+  <div id="msg" class="hidden"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
