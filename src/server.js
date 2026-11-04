@@ -313,7 +313,7 @@ app.get('/api/epg', (req) => {
   if (mrows.length) {
     // every track of the programme with its time: the guide shows what is playing or still to come (not just the first four of the
     // half hour), and the on-screen banner uses the times to follow the track actually being watched
-    const q = db.prepare("SELECT i.artist, i.title, b.start, b.end FROM blocks b JOIN items i ON i.id=b.item_id WHERE b.programme_id=? AND b.kind='content' ORDER BY b.start");
+    const q = db.prepare("SELECT i.id AS item, i.artist, i.title, b.start, b.end FROM blocks b JOIN items i ON i.id=b.item_id WHERE b.programme_id=? AND b.kind='content' ORDER BY b.start");
     for (const r of mrows) tracks.set(r.id, q.all(r.id));
   }
   for (const r of rows) {
@@ -327,8 +327,8 @@ app.get('/api/epg', (req) => {
         const t = (ahead.length ? ahead : all).slice(0, 4);
         const nm = (x) => (x.artist ? `${x.artist} – ${x.title}` : x.title);
         const near = r.end > now - 3600 && r.start < now + 1800; // only programmes around now need per-track times
-        return { title: t[0] ? nm(t[0]) : r.title, subtitle: t.slice(1).map(nm).join(' · '), plot: all.map(nm).join('\n'),
-          ...(near ? { trk: all.map((x) => [Math.round(x.start), Math.round(x.end), nm(x)]) } : {}) };
+        return { item: t[0] ? t[0].item : r.item_id, title: t[0] ? nm(t[0]) : r.title, subtitle: t.slice(1).map(nm).join(' · '), plot: all.map(nm).join('\n'),
+          ...(near ? { trk: all.map((x) => [Math.round(x.start), Math.round(x.end), nm(x), x.item]) } : {}) };
       })() : {}),
       season: r.season, episode: r.episode, year: r.year, plot: r.plot, rating: r.rating, mpaa: r.mpaa,
       genres: JSON.parse(r.genres || '[]'),

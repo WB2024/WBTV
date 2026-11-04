@@ -147,6 +147,9 @@ function paintSel(scrollTo = true) {
 
 async function showInfo(p, ch) {
   const info = $('#info');
+  // a music slot is half an hour of tracks: the picture and description belong to the track playing now, not the slot's first track
+  const nowT = Date.now() / 1000, tr = p.trk?.find((x) => x[0] <= nowT && x[1] > nowT);
+  if (tr?.[3] && tr[3] !== p.item) p = { ...p, item: tr[3], title: tr[2], plot: '' };
   const live = p.start <= Date.now() / 1000 && p.end > Date.now() / 1000;
   const tag = live ? h('span', { class: 'badge' }, 'NOW') : p.end <= Date.now() / 1000 ? h('span', { class: 'badge' }, 'EARLIER') : h('span', { class: 'badge' }, 'NEXT');
   const body = (d) => h('div', { style: 'min-width:0' },
