@@ -156,7 +156,7 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 - 🔌 **Tuner output**: HDHomeRun emulation, an **M3U playlist** and **XMLTV guide** for Plex, Jellyfin, Emby, TiviMate, VLC, Kodi and more
 - 🗄️ **Jellyfin, Emby and Navidrome as a source**: connect with an API key (or a Navidrome login) and WBTV builds channels from those libraries too. Folders still work and you can mix both: [which is better for you?](#folders-or-a-media-server)
 - 🌐 **Live TV**: add any M3U/M3U8 playlist, HLS stream, or YouTube live link
-- 📱 **Native Android TV / Fire TV app** (Kotlin, Compose, Media3) with a full on-TV settings screen
+- 📱 **Native Android TV / Fire TV app** (Kotlin, Compose, Media3) with a full on-TV settings screen, and a **[Samsung (Tizen) TV app](#samsung-tv-app)**
 - 🔒 **Optional password and access key**, and a documented [HTTP API](docs/API.md)
 - ⚡ **Hardware encoding** (Intel/AMD VAAPI, NVIDIA NVENC) with an automatic self-test and CPU fallback
 
@@ -332,6 +332,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 </details>
 
+## Samsung TV app
+
+A small TV-only client for Samsung (Tizen) TVs, made for the remote: the guide with a chip for every channel group, a picture and description that follow the track playing, and live playback through Samsung's AVPlay. Plain JavaScript, no build step. Tested on a 2022 Samsung The Frame (Tizen 6.5).
+
+Samsung TVs only run signed apps. Download `WBTV-Tizen.wgt` from the [Tizen release](https://github.com/WB2024/WBTV/releases/tag/tizen-v0.1.0) and install it with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (**Custom WGT File**, with the TV in Developer mode), or build and sign it yourself with Tizen Studio's command line. The remote keys, the TizenBrew route and a desktop-browser preview are in [tizen/README.md](tizen/README.md).
+
 ## Themes
 
 <p align="center">
@@ -408,6 +414,7 @@ WBTV is young, maintained by one person, and developed on real hardware (a Proxm
 |---|---|
 | Web UI, scheduling, ads, announcements, music/radio/lyrics, live IPTV/YouTube, M3U/XMLTV/HDHomeRun | ✅ In daily use |
 | Android TV / Fire TV app | ✅ Tested on a Fire TV (Android 9); ran for a full night without a crash |
+| Samsung (Tizen) TV app | 🟡 New. Guide, chips and live playback work on one 2022 The Frame (Tizen 6.5); no other model tried |
 | CPU (x264) encoding, amd64 | ✅ The tested path |
 | Hardware encoding (VAAPI / NVENC) | 🟡 New. Self-test and fallback verified; not yet seen on a real GPU |
 | arm64 (Raspberry Pi 4/5) | 🟡 Built by CI; not yet run on real hardware |
@@ -453,6 +460,8 @@ If something misbehaves, please [open an issue](https://github.com/WB2024/WBTV/i
 src/         Node.js server: scanner, channel inference, scheduler, live HLS broadcaster, API
 public/      Web UI (vanilla JS)
 android/     Android TV app (Kotlin, Compose, Media3); unit tests: ./gradlew testDebugUnitTest
+tizen/       Samsung (Tizen) TV app (plain JavaScript, no build step)
+tools/       Command-line helpers, including mvdl.py, the music video downloader
 docs/        API reference, full feature list, comparison with other tools
 test/        Unit tests (npm test)
 Dockerfile   Node 24 + ffmpeg + yt-dlp + Piper (speech); multi-arch (amd64, arm64)

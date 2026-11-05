@@ -23,6 +23,7 @@ The complete feature list, by area. For what's new in each version see the [rele
 - Saved as `Artist/Artist - Title.mp4` with a clean `.nfo` (the real release year from IMVDb, your library's genre for that artist, the IMVDb id and the director) and a poster, then WBTV rescans so the video appears in your channels.
 - You need your own free IMVDb app key. It is stored on the server and never shown in the browser. It is off until a **WBTV password**, the key, and a **writable music video folder** are all in place: WBTV keeps your media read-only unless you choose to make that one folder writable.
 - One download at a time, at low priority; a failed download shows its reason and can be retried; the queue survives a restart.
+- **`tools/mvdl.py`** is a lightweight command-line version that runs on your own computer: it reads artists from Navidrome (`top 20` takes the artists with the most songs), finds official videos through MusicBrainz and yt-dlp, appends "(official music video)" to searches, and can work through text files of YouTube links (one file per artist, or a folder of them). It only keeps official uploads (a live recording is fine when it is the official video), and rejects lyric or audio videos and still images. See [tools/README.md](../tools/README.md).
 - Downloading from YouTube or Vimeo may go against their terms. It is your choice to use it, and WBTV does not enable it by default.
 
 ## Channel groups
@@ -46,7 +47,7 @@ The complete feature list, by area. For what's new in each version see the [rele
 
 - **EPG grid** (Freeview-style): what's on now, what was on, what's next, with poster, plot, cast, studio, year, rating and genres.
 - **Live preview** in the guide.
-- **Filter chips**: All channels, TV, Movies, Music, Radio, Live, Networks and Genres (chips with nothing in them are hidden).
+- **Filter chips**: All channels, TV, Movies, Music, Radio, Live, Networks and Genres, plus **one chip for every channel group** that has its own channel (chips with nothing in them are hidden). On Android TV, Up from the top row reaches the chips, and Rewind / Fast-forward step through them from anywhere in the guide.
 - **Pause, rewind, skip and return to live**, on a rolling server-side buffer (10 minutes by default, adjustable).
 - **Info banner** with a progress bar, "N min left", what's next, and how far behind live you are. On radio the banner follows the *track* you are watching.
 - **Channel surfing**: number entry (0-9), last channel, channel up/down.
@@ -82,6 +83,8 @@ The complete feature list, by area. For what's new in each version see the [rele
 
 - **Music-video channels** playing back to back with an **Artist - Title lower-third**. Uses `<musicvideo>` NFOs, or just name files `Artist - Title.mp4`.
 - **Radio stations** from audio files (mp3, flac, m4a, ogg, ...): the screen shows **cover art, now-playing text and a live waveform**.
+  - **Tidy stations**: a song plays once across different releases, tracks under 45 seconds or over 15 minutes are skipped, and sub-genres fold into one station per family.
+  - **Station look** (Setup): classic, a blurred cover-art backdrop, or frequency bars.
   - **Lyrics**: a time-synced `.lrc`, an `.srt`, or a `.txt`/`.lyrics` file next to the track (same name), or lyrics stored in the file's tags. Synced lyrics follow the song with the next line previewed; plain text is paged across the song as an estimate. Switch off in Settings.
   - **Cover art** from `cover.jpg` / `folder.jpg` / `front.jpg` in the folder, or the picture embedded in the files (read once per album and filled in gradually for existing libraries).
   - Tags are read from the files; filenames like `01 - Artist - Title.flac` are understood when tags are missing. Junk dates (e.g. `0001-01-01`) are ignored in favour of the real year or a `[1985]` folder name.
@@ -127,6 +130,14 @@ The complete feature list, by area. For what's new in each version see the [rele
 - A full **settings screen** on the TV: theme, fullscreen behaviour, access key, and the server's own switches (ad breaks, announcements, logos, idents, closedown, dayparting, era-matched ads, stream size, rescans, scan now).
 - Crash-recovery relaunch, retries while a channel is starting, a "Tuning..." indicator, and surf debouncing so flipping through channels doesn't flood the server.
 - Needs Android 8+; tested on a Fire TV (Android 9). APK in each [release](https://github.com/WB2024/WBTV/releases).
+
+## Samsung (Tizen) TV app
+
+- A TV-only client for Samsung TVs in plain JavaScript (no build step), with the same guide, chip row (one chip per channel group), banner and number entry as the other apps. Music and radio slots show the picture and description of the track playing now.
+- Live playback through Samsung's **AVPlay**; a desktop browser falls back to a `<video>` tag, and `tizen/dev.mjs` lets you try the guide in one.
+- Install with Apps2Samsung (**Custom WGT File**), Tizen Studio's command line, or the TizenBrew module. First run asks for the server address.
+- The server sends `Access-Control-Allow-Origin: *` on GET requests to `/api/` and `/live/` so a page served from the TV can read the guide and streams. Anything that changes data is unchanged.
+- Tested on one 2022 The Frame (Tizen 6.5). See [tizen/README.md](../tizen/README.md).
 
 ## Performance
 
