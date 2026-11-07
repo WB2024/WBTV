@@ -5,6 +5,7 @@ import path from 'node:path';
 import { cfg } from './config.js';
 import { run, probe } from './media.js';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import os from 'node:os';
 import { LEAD_IN, SEG_GAP, WORDS_PER_SECOND } from './promo.js';
 import { speakable } from './speech.js';
@@ -57,10 +58,8 @@ async function download(url, dest) {
   const r = await fetch(url, { redirect: 'follow' });
   if (!r.ok || !r.body) throw new Error(`download failed (${r.status}) for ${path.basename(url)}`);
   const tmp = dest + '.part';
-  await new Promise((resolve, reject) => {
-    const out = fs.createWriteStream(tmp);
-    Readable.fromWeb(r.body).pipe(out).on('finish', resolve).on('error', reject);
-  });
+  // pipeline passes an error from EITHER end on (a connection dropped half way), where .pipe() left the install hanging for ever
+  try { await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp)); } catch (e) { fs.rmSync(tmp, { force: true }); throw new Error(`download of ${path.basename(url)} was interrupted (${e?.cause?.code || e?.message || e})`); }
   fs.renameSync(tmp, dest);
 }
 

@@ -1,7 +1,7 @@
 // Turns programme text into something a voice reads the way a person would: numbers, years, episode codes,
 // abbreviations, and punctuation that should be a pause rather than a symbol. Pure functions, no I/O.
 // Bump SPEECH_VERSION when the rules change so cached recordings are regenerated.
-export const SPEECH_VERSION = 2;
+export const SPEECH_VERSION = 3;
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
   'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
@@ -66,12 +66,15 @@ export function speakable(input) {
 
   // money, percentages, symbols
   s = s.replace(/£\s?(\d[\d,]*)(\.\d{2})?/g, (_, a, p) => `${numberToWords(+a.replace(/,/g, ''))} pound${+a.replace(/,/g, '') === 1 ? '' : 's'}${p ? ' ' + numberToWords(+p.slice(1)) + ' pence' : ''}`);
-  s = s.replace(/\$\s?(\d[\d,]*)/g, (_, a) => `${numberToWords(+a.replace(/,/g, ''))} dollar${+a.replace(/,/g, '') === 1 ? '' : 's'}`);
+  s = s.replace(/\$\s?(\d[\d,]*)(\.\d{2})?/g, (_, a, c) => `${numberToWords(+a.replace(/,/g, ''))} dollar${+a.replace(/,/g, '') === 1 ? '' : 's'}${c && +c.slice(1) ? ' ' + numberToWords(+c.slice(1)) + ' cents' : ''}`);
   s = s.replace(/(\d)\s?%/g, '$1 percent').replace(/&/g, ' and ').replace(/\+/g, ' plus ').replace(/@/g, ' at ');
 
   // clock times: 9pm, 9:30 pm
   s = s.replace(/\b(\d{1,2})(?::(\d{2}))?\s?([ap])\.?m\.?(?![a-z])/gi, (_, h, m, ap) =>
     `${numberToWords(+h)}${m && m !== '00' ? ' ' + (+m < 10 ? 'oh ' : '') + numberToWords(+m) : ''} ${ap.toUpperCase()} M`);
+
+  // decimals: "3.14" is "three point one four" (digits only after the point), not "three, fourteen"
+  s = s.replace(/\b(\d+)\.(\d+)\b/g, (_, a, d) => `${a} point ${d.split('').map((x) => ONES[+x]).join(' ')}`);
 
   // decades, years, ordinals, plain numbers
   s = s.replace(/\b(1[0-9]|20)(\d)0'?s\b/g, (_, a, b) => {

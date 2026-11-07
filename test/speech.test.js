@@ -64,3 +64,11 @@ test('empty and odd input never throws and ends in punctuation', () => {
   assert.equal(speakable('   ...  '), '');
   assert.match(speakable('Hello'), /[.!?]$/);
 });
+
+test('decimals and dollar amounts with cents are spoken as a person would', () => {
+  assert.equal(speakable('3.14'), 'three point one four.');
+  assert.equal(speakable('Rated 8.5 out of 10'), 'Rated eight point five out of ten.');
+  assert.equal(speakable('It costs $5.99'), 'It costs five dollars ninety-nine cents.');
+  assert.equal(speakable('It costs $2'), 'It costs two dollars.');
+  assert.equal(speakable('Ends in 2005. The next'), 'Ends in two thousand and five. The next.', 'a full stop between sentences is not a decimal point');
+});
