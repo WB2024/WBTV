@@ -9,7 +9,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wbtv-ms-'));
 process.env.WBTV_CONFIG = dir;
 const { openDb } = await import('../src/db.js');
 const { scanLibrary } = await import('../src/scanner.js');
-const { discover, normalizeUrl, resolveMedia, parseRemote, isRemote } = await import('../src/mediaserver.js');
+const { discover, normalizeUrl, resolveMedia, parseRemote, isRemote, forgetSource } = await import('../src/mediaserver.js');
 
 // a tiny Jellyfin: one user, a TV view with one series and three episodes, a movie view with one film
 let down = false;
@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/System/Info/Public') return json({ ServerName: 'Test Jelly', ProductName: 'Jellyfin Server', Version: '10.9.0' });
   if (!/Token="goodkey"/.test(req.headers.authorization || '')) return json({}, 401); // Jellyfin 12: only the MediaBrowser Authorization header
   if (u.pathname === '/Users') return json([{ Id: 'u1', Name: 'will', Policy: { IsAdministrator: true } }]);
-  if (u.pathname === '/Users/u1/Views') return json({ Items: [{ Id: 'tvview', Name: 'Shows', CollectionType: 'tvshows' }, { Id: 'mview', Name: 'Films', CollectionType: 'movies' }, { Id: 'music', Name: 'Music', CollectionType: 'music' }] });
+  if (u.pathname === '/Users/u1/Views') return json({ Items: [{ Id: 'tvview', Name: 'Shows', CollectionType: 'tvshows' }, { Id: 'mview', Name: 'Films', CollectionType: 'movies' }, { Id: 'music', Name: 'Music', CollectionType: 'music' }, { Id: 'mvview', Name: 'Music Videos', CollectionType: 'musicvideos' }] });
   if (u.pathname === '/Users/u1/Items') {
     const types = u.searchParams.get('IncludeItemTypes');
     const parent = u.searchParams.get('ParentId');
@@ -29,6 +29,7 @@ const server = http.createServer((req, res) => {
     if (parent === 'tvview' && types === 'Series') Items = [{ Id: 's1', Name: 'Great Show', Overview: 'A show.', ProductionYear: 2010, OfficialRating: 'TV-14', Genres: ['Drama'], Studios: [{ Name: 'BBC One' }] }];
     if (parent === 'tvview' && types === 'Episode') Items = [1, 2, 3].map((n) => ({ Id: `e${n}`, Name: `Ep ${n}`, SeriesId: 's1', ParentIndexNumber: 1, IndexNumber: n, RunTimeTicks: 1800 * TICKS, PremiereDate: `2010-01-0${n}T00:00:00Z`, DateLastSaved: '2024-01-01T00:00:00Z', People: [{ Name: 'Actor', Role: 'Hero', Type: 'Actor' }, { Name: 'Dir', Type: 'Director' }] }));
     if (parent === 'mview' && types === 'Movie') Items = [{ Id: 'm1', Name: 'A Film', ProductionYear: 1999, RunTimeTicks: 5400 * TICKS, Genres: ['Horror'], Studios: [{ Name: 'Warner Bros.' }], OfficialRating: 'R', DateLastSaved: '2024-01-01T00:00:00Z' }, { Id: 'm2', Name: 'No runtime' }];
+    if (parent === 'mvview' && types === 'MusicVideo') Items = [{ Id: 'v1', Name: 'Boxers', Artists: ['Morrissey'], Album: 'Your Arsenal', ProductionYear: 1995, RunTimeTicks: 240 * TICKS, DateLastSaved: '2024-01-01T00:00:00Z' }, { Id: 'v2', Name: 'No length' }];
     return json({ Items, TotalRecordCount: Items.length });
   }
   if (/^\/Items\/[^/]+\/Images\/Primary$/.test(u.pathname)) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9])); }
@@ -44,10 +45,10 @@ test('addresses are tidied up', () => {
   assert.equal(normalizeUrl(''), '');
 });
 
-test('discovery lists the TV and movie libraries and ignores the rest', async () => {
+test('discovery lists the TV, movie and music-video libraries and ignores the rest', async () => {
   const d = await discover(url, 'goodkey');
   assert.equal(d.name, 'Test Jelly');
-  assert.deepEqual(d.views.map((v) => [v.id, v.type]), [['tvview', 'tv'], ['mview', 'movies']]);
+  assert.deepEqual(d.views.map((v) => [v.id, v.type]), [['tvview', 'tv'], ['mview', 'movies'], ['mvview', 'music']]);
   assert.equal(d.userId, 'u1');
 });
 
@@ -117,4 +118,38 @@ test('log lines never carry a media server key, in either spelling', async () =>
   const { hideKeys } = await import('../src/broadcaster.js');
   const out = hideKeys('ffmpeg -i http://h/Videos/1/stream?static=true&ApiKey=SECRET1&api_key=SECRET2 -f x');
   assert.ok(!/SECRET/.test(out), out);
+});
+
+test('a Jellyfin music-video view becomes music videos with artist and album', async () => {
+  const { db } = setup();
+  const id = Number(db.prepare("INSERT INTO libraries(name,path,type) VALUES('MVs','ms://1/mvview','music')").run().lastInsertRowid);
+  await run(db, id);
+  const rows = db.prepare("SELECT kind, title, artist, album, year, runtime FROM items WHERE library_id=?").all(id);
+  assert.equal(rows.length, 1, 'the one without a length is skipped');
+  assert.deepEqual({ ...rows[0] }, { kind: 'musicvideo', title: 'Boxers', artist: 'Morrissey', album: 'Your Arsenal', year: 1995, runtime: 240 });
+});
+
+test('Emby still gets the old header and api_key, and is told apart from Jellyfin', async () => {
+  let seen = null;
+  const emby = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const json = (o, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (u.pathname === '/System/Info/Public') return json({ ServerName: 'Test Emby', ProductName: 'Emby Server', Version: '4.8.0' });
+    seen = { token: req.headers['x-emby-token'], auth: req.headers.authorization };
+    if (req.headers['x-emby-token'] !== 'embykey') return json({}, 401);
+    if (u.pathname === '/Users') return json([{ Id: 'u1', Name: 'will', Policy: {} }]);
+    if (u.pathname === '/Users/u1/Views') return json({ Items: [{ Id: 'mview', Name: 'Films', CollectionType: 'movies' }] });
+    json({}, 404);
+  });
+  await new Promise((r) => emby.listen(0, '127.0.0.1', r));
+  try {
+    const d = await discover(`127.0.0.1:${emby.address().port}`, 'embykey');
+    assert.equal(d.product, 'Emby Server');
+    assert.equal(seen.token, 'embykey');
+    assert.equal(seen.auth, undefined, 'no MediaBrowser header for Emby');
+    const db = openDb(fs.mkdtempSync(path.join(dir, 'db-')));
+    db.prepare('INSERT INTO sources(kind,name,url,token,user_id) VALUES(?,?,?,?,?)').run('emby', 'E', 'http://emby:8096', 'embykey', 'u1');
+    forgetSource(1); // sources are remembered by id for a minute, and the earlier tests used id 1 in another database
+    assert.equal(resolveMedia(db, 'ms://1/x'), 'http://emby:8096/Videos/x/stream?static=true&MediaSourceId=x&api_key=embykey');
+  } finally { emby.close(); }
 });
