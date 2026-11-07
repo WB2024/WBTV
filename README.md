@@ -336,7 +336,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 A small TV-only client for Samsung (Tizen) TVs, made for the remote: the guide with a chip for every channel group, a picture and description that follow the track playing, and live playback through Samsung's AVPlay. Plain JavaScript, no build step. Tested on a 2022 Samsung The Frame (Tizen 6.5).
 
-Samsung TVs only run signed apps. Download `WBTV-Tizen.wgt` from the [Tizen release](https://github.com/WB2024/WBTV/releases/tag/tizen-v0.1.0) and install it with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (**Custom WGT File**, with the TV in Developer mode), or build and sign it yourself with Tizen Studio's command line. The remote keys, the TizenBrew route and a desktop-browser preview are in [tizen/README.md](tizen/README.md).
+Samsung TVs only run signed apps. Download `WBTV-Tizen.wgt` from the [Tizen release](https://github.com/WB2024/WBTV/releases/tag/tizen-v0.1.1) and install it with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (**Custom WGT File**, with the TV in Developer mode), or build and sign it yourself with Tizen Studio's command line. The remote keys, the TizenBrew route and a desktop-browser preview are in [tizen/README.md](tizen/README.md).
 
 ## Themes
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
-        id="https://github.com/WB2024/WBTV" version="0.1.0" viewmodes="fullscreen">
+        id="https://github.com/WB2024/WBTV" version="0.1.1" viewmodes="fullscreen">
   <tizen:application id="WbtvTV0001.WBTV" package="WbtvTV0001" required_version="4.0"/>
   <name>WBTV</name>
   <icon src="assets/icon.png"/>
