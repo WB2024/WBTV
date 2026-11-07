@@ -298,6 +298,7 @@ function channelUpDown(dir) {
 
 let digitTimer;
 addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // browser shortcuts (Ctrl+F find, Ctrl+L address bar, Ctrl+K, Alt+Left...) are not ours
   if (!$('#modal').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   if (!S.channels.length) return;
   const fs = !!document.fullscreenElement;
@@ -479,9 +480,9 @@ function libTable(libs, reload, poll) {
         h('button', { class: 'sm danger', onclick: async () => { if (confirm(`Remove "${l.name}" from WBTV? (files are not touched)`)) { await api(`/api/libraries/${l.id}`, { method: 'DELETE' }); reload(); } } }, 'Remove')))));
 }
 
-/** Read libraries from a media server instead of from folders: Jellyfin / Emby (TV and films) or Navidrome (music, for the radio stations). */
+/** Read libraries from a media server instead of from folders: Jellyfin / Emby (TV, films, music videos) or Navidrome (music, for the radio stations). */
 function addMediaServerForm(onAdded) {
-  const kind = h('select', {}, [['jellyfin', 'Jellyfin / Emby (TV and films)'], ['navidrome', 'Navidrome (music for radio)']].map(([v, l]) => h('option', { value: v }, l)));
+  const kind = h('select', {}, [['jellyfin', 'Jellyfin / Emby (TV, films, music videos)'], ['navidrome', 'Navidrome (music for radio)']].map(([v, l]) => h('option', { value: v }, l)));
   const url = h('input', { type: 'text', placeholder: 'Server address, e.g. 192.168.1.111:8096', style: 'flex:1;min-width:200px' });
   const key = h('input', { type: 'password', placeholder: 'API key (Jellyfin: Dashboard > API Keys)', style: 'flex:1;min-width:200px', autocomplete: 'off' });
   const user = h('input', { type: 'text', placeholder: 'Navidrome username', style: 'width:170px', autocomplete: 'off' });
@@ -516,7 +517,7 @@ async function tabLibraries(body) {
   const list = h('div', {});
   body.append(status, list, h('h3', {}, 'Add a library'), addLibraryForm(() => { reload(); poll(); }, ['tv', 'movies', 'music', 'clips', 'radio', 'talk_interviews', 'talk_podcasts', 'talk_audiobooks']),
     h('h3', {}, 'Or read libraries from a media server'),
-    h('p', { class: 'note' }, 'Jellyfin / Emby for TV and films, Navidrome for music. WBTV reads titles, genres and pictures through the server API and plays the originals from it, so channels are built just like from folders. The key (or, for Navidrome, a login token; the password is not kept) stays on the WBTV server. See the README for when folders are the better choice.'),
+    h('p', { class: 'note' }, 'Jellyfin / Emby for TV, films and music videos, Navidrome for music. WBTV reads titles, genres and pictures through the server API and plays the originals from it, so channels are built just like from folders. The key (or, for Navidrome, a login token; the password is not kept) stays on the WBTV server. See the README for when folders are the better choice.'),
     addMediaServerForm(() => { reload(); poll(); }),
     h('p', { class: 'note' }, 'Music videos: video files with an Artist - Title name (or a <musicvideo> NFO). Radio: audio files; tags are read from the files. Both build themed channels automatically. Live TV and news streams are on the Live TV tab.'));
   const poll = () => scanStatus(status, reload);

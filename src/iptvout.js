@@ -51,7 +51,7 @@ export function registerIptvOut(app, db, getBroadcaster, getToken = () => '') {
         if (p.plot) x += `<desc>${esc(p.plot)}</desc>`;
         for (const g of p.genres || []) x += `<category>${esc(g)}</category>`;
         if (p.year) x += `<date>${esc(p.year)}</date>`;
-        if (p.season != null && p.episode != null) x += `<episode-num system="onscreen">S${p.season}E${p.episode}</episode-num><episode-num system="xmltv_ns">${p.season - 1}.${p.episode - 1}.</episode-num>`;
+        if (p.season != null && p.episode != null) x += `<episode-num system="onscreen">S${p.season}E${p.episode}</episode-num>${p.season >= 1 && p.episode >= 1 ? `<episode-num system="xmltv_ns">${p.season - 1}.${p.episode - 1}.</episode-num>` : ''}`; // specials (season 0) have no zero-based number: it would land on season 1
         else if (p.movie) x += '<category>Movie</category>';
         x += '</programme>\n';
       }
