@@ -3,6 +3,8 @@ import fastifyStatic from '@fastify/static';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import zlib from 'node:zlib';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { cfg } from './config.js';
 import { openDb, getSettings, setSettings } from './db.js';
@@ -29,6 +31,14 @@ const app = Fastify({ logger: { level: 'warn' } });
 app.addHook('onSend', async (req, reply, payload) => {
   if (req.method === 'GET' && (req.url.startsWith('/api/') || req.url.startsWith('/live/'))) reply.header('Access-Control-Allow-Origin', '*');
   return payload;
+});
+// JSON answers (the guide is the big one: every programme of every channel with its description) are sent gzipped to clients that accept it
+const gzip = promisify(zlib.gzip);
+app.addHook('onSend', async (req, reply, payload) => {
+  if (typeof payload !== 'string' || payload.length < 1400 || !/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) return payload;
+  if (!String(reply.getHeader('content-type') || '').startsWith('application/json') || reply.getHeader('content-encoding')) return payload;
+  reply.header('Content-Encoding', 'gzip').header('Vary', 'Accept-Encoding');
+  return gzip(payload, { level: 4 });
 });
 const { getToken } = initAuth(app, db);
 /** Stream picture size: a lower one costs much less CPU per channel. Applies to streams as they start. */
