@@ -177,3 +177,14 @@ test('a download that is a still image with audio, or a lyric / audio upload, is
   assert.equal(j.status, 'done');
   assert.ok(fs.existsSync(path.join(mv, 'Morrissey', 'Morrissey - Suedehead.mp4')));
 });
+
+test('a music-video library that lives in Jellyfin is never chosen as the download folder', async () => {
+  const { openDb } = await import('../src/db.js');
+  const fsm = await import('node:fs'), osm = await import('node:os'), pathm = await import('node:path');
+  const { musicLibrary } = await import('../src/imvdb.js');
+  const db = openDb(fsm.mkdtempSync(pathm.join(osm.tmpdir(), 'wbtv-mvl-')));
+  db.prepare("INSERT INTO libraries(name,path,type) VALUES('Jelly MVs','ms://1/abc','music')").run();
+  assert.equal(musicLibrary(db), null);
+  db.prepare("INSERT INTO libraries(name,path,type) VALUES('Folder MVs','/mnt/mv','music')").run();
+  assert.equal(musicLibrary(db).name, 'Folder MVs');
+});

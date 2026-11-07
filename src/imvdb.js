@@ -82,7 +82,8 @@ export function pickSource(sources) {
 
 // ---- what you have ---------------------------------------------------------------------------------------------------------------
 export const haveKeys = (db) => new Set(db.prepare("SELECT artist, title FROM items WHERE kind='musicvideo'").all().map((r) => `${norm(r.artist)}|${slug(r.title)}`));
-export const musicLibrary = (db) => db.prepare("SELECT id, name, path FROM libraries WHERE type='music' ORDER BY id LIMIT 1").get() || null;
+// downloads need a real folder: a music-video library that lives in Jellyfin / Emby (ms://...) has nowhere to save to
+export const musicLibrary = (db) => db.prepare("SELECT id, name, path FROM libraries WHERE type='music' AND path NOT LIKE 'ms://%' ORDER BY id LIMIT 1").get() || null;
 const writable = (dir) => { try { fs.accessSync(dir, fs.constants.W_OK); return true; } catch { return false; } };
 
 /** Artists in your music library (Navidrome or folders), most albums first, with how many videos of theirs you already have. */
