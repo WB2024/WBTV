@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS live_streams (
 );
 CREATE INDEX IF NOT EXISTS idx_items_channel ON items(channel_id);
 CREATE INDEX IF NOT EXISTS idx_items_lib ON items(library_id);
+CREATE INDEX IF NOT EXISTS idx_items_show ON items(show_id); -- deleting a show (cascade) and the channel planner look episodes up by show
+CREATE INDEX IF NOT EXISTS idx_shows_lib ON shows(library_id);
 CREATE TABLE IF NOT EXISTS channels (
   id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
   auto_name TEXT NOT NULL, name_override TEXT, number INTEGER, enabled INTEGER DEFAULT 1,

@@ -11,6 +11,7 @@ Tested on a 2022 Samsung The Frame (Tizen 6.5). The app asks for Tizen 4.0 or ne
 - Music and radio slots follow the **track playing now**, so the picture and description match what you hear.
 - Live playback with a banner (title, time left, next track), pause, number entry and channel up/down.
 - First run asks for the server address (for example `192.168.1.110:8420`) and remembers it.
+- If your server has a password, add its access key (WBTV Setup shows it) to the address: `192.168.1.110:8420?key=YOURKEY`.
 
 ## Remote control
 

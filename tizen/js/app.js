@@ -5,11 +5,11 @@
   'use strict';
   var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13, BACK: 10009, EXIT: 10182, CH_UP: 427, CH_DOWN: 428,
     PLAY: 415, PAUSE: 19, PLAYPAUSE: 10252, STOP: 413, REW: 412, FF: 417, INFO: 457, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406 };
-  var STORE = 'wbtv-server';
+  var STORE = 'wbtv-server', STORE_KEY = 'wbtv-key';
   var AV = typeof window.webapis !== 'undefined' && window.webapis.avplay;
   var viewer = 'tz' + Math.floor(Math.random() * 1e9).toString(36);
 
-  var S = { server: '', channels: [], epg: {}, chips: [], chip: 'all', rows: [], sel: 0, top: 0, zone: 'list', mode: 'setup',
+  var S = { server: '', key: '', channels: [], epg: {}, chips: [], chip: 'all', rows: [], sel: 0, top: 0, zone: 'list', mode: 'setup',
     playing: null, retry: 0, paused: false };
   var $ = function (id) { return document.getElementById(id); };
   var VISIBLE = 10;
@@ -21,14 +21,20 @@
   function api(path) {
     return new Promise(function (ok, bad) {
       var x = new XMLHttpRequest();
-      x.open('GET', S.server + path); x.timeout = 20000;
-      x.onload = function () { if (x.status >= 200 && x.status < 300) { try { ok(JSON.parse(x.responseText)); } catch (e) { bad(e); } } else bad(new Error('HTTP ' + x.status)); };
+      x.open('GET', S.server + withKey(path)); x.timeout = 20000;
+      x.onload = function () {
+        if (x.status >= 200 && x.status < 300) { try { ok(JSON.parse(x.responseText)); } catch (e) { bad(e); } }
+        else bad(new Error(x.status === 401 ? 'The server wants an access key: add ?key=YOURKEY to the address' : 'HTTP ' + x.status));
+      };
       x.onerror = x.ontimeout = function () { bad(new Error('Cannot reach the server')); };
       x.send();
     });
   }
+  // a server with a password takes its access key (shown in WBTV's Setup) as ?key=... in the address, the way the IPTV apps do
+  function withKey(path) { return S.key ? path + (path.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(S.key) : path; }
+  function keyOf(v) { var m = /[?&]key=([^&\s]*)/.exec(v || ''); return m ? decodeURIComponent(m[1]) : ''; }
   function normServer(v) {
-    v = (v || '').replace(/\s+/g, '').replace(/\/+$/, '');
+    v = (v || '').replace(/\s+/g, '').replace(/[?&]key=[^&]*/, '').replace(/\/+$/, '');
     if (!v) return '';
     if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
     return v;
@@ -39,7 +45,7 @@
     S.mode = 'setup';
     document.body.classList.remove('playing');
     $('guide').classList.add('hidden'); $('setup').classList.remove('hidden');
-    $('addr').value = localStorage.getItem(STORE) || window.WBTV_DEFAULT || '';
+    $('addr').value = (localStorage.getItem(STORE) || window.WBTV_DEFAULT || '') + (localStorage.getItem(STORE_KEY) ? '?key=' + localStorage.getItem(STORE_KEY) : '');
     $('setupMsg').textContent = msg || '';
     S.setupFocus = 'addr'; paintSetup();
   }
@@ -49,10 +55,10 @@
     if (S.setupFocus === 'addr') { try { $('addr').focus(); } catch (e) { /* ignore */ } } else { try { $('addr').blur(); } catch (e2) { /* ignore */ } }
   }
   function connect() {
-    var v = normServer($('addr').value);
+    var v = normServer($('addr').value), key = keyOf($('addr').value);
     if (!v) { $('setupMsg').textContent = 'Type the server address first'; return; }
-    S.server = v; $('setupMsg').textContent = 'Connecting…';
-    load().then(function () { localStorage.setItem(STORE, v); showGuide(); }).catch(function (e) { $('setupMsg').textContent = 'Could not connect: ' + e.message; });
+    S.server = v; S.key = key; $('setupMsg').textContent = 'Connecting…';
+    load().then(function () { localStorage.setItem(STORE, v); if (key) localStorage.setItem(STORE_KEY, key); else localStorage.removeItem(STORE_KEY); showGuide(); }).catch(function (e) { $('setupMsg').textContent = 'Could not connect: ' + e.message; });
   }
 
   // ------------------------------------------------------------------ data
@@ -200,13 +206,13 @@
   // ------------------------------------------------------------------ playback
   var osdTimer, osdTick, msgTimer, digits = '', digitTimer;
   function setMsg(text, ms) { var m = $('msg'); if (!text) { m.classList.add('hidden'); return; } m.textContent = text; m.classList.remove('hidden'); clearTimeout(msgTimer); if (ms) msgTimer = setTimeout(function () { m.classList.add('hidden'); }, ms); }
-  function url(ch) { return S.server + '/live/' + ch.id + '/index.m3u8?v=' + viewer; }
+  function url(ch) { return S.server + withKey('/live/' + ch.id + '/index.m3u8?v=' + viewer); }
   function avStop() {
     if (AV) { try { var st = window.webapis.avplay.getState(); if (st !== 'NONE' && st !== 'IDLE') window.webapis.avplay.stop(); window.webapis.avplay.close(); } catch (e) { /* ignore */ } }
     else { var v = $('vid'); try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e2) { /* ignore */ } }
   }
   function leave() {
-    if (S.playing != null) { var x = new XMLHttpRequest(); x.open('POST', S.server + '/live/' + S.playing + '/stop?v=' + viewer); x.send(); }
+    if (S.playing != null) { var x = new XMLHttpRequest(); x.open('POST', S.server + withKey('/live/' + S.playing + '/stop?v=' + viewer)); x.send(); }
     avStop(); S.playing = null;
   }
   function tune(ch) {
@@ -223,6 +229,8 @@
     if (S.retry < 4) { S.retry++; setMsg('Reconnecting…'); setTimeout(function () { if (S.playing === ch.id) { avStop(); start(ch); } }, 2500); }
     else setMsg('Cannot play this channel (' + why + ')');
   }
+  // the reconnect count starts over once a channel has played steadily for half a minute, so a long evening of the odd hiccup never runs it out
+  function stable(ch) { clearTimeout(S.okTimer); S.okTimer = setTimeout(function () { if (S.playing === ch.id) S.retry = 0; }, 30000); }
   function start(ch) {
     var u = url(ch);
     if (AV) {
@@ -235,11 +243,11 @@
           onstreamcompleted: function () { fail(ch, 'stream ended'); },
           onerror: function (e) { fail(ch, String(e)); }, onevent: function () {}, oncurrentplaytime: function () {}
         });
-        a.prepareAsync(function () { try { a.play(); setMsg(''); } catch (e) { fail(ch, e.message); } }, function (e) { fail(ch, 'prepare ' + e); });
+        a.prepareAsync(function () { try { a.play(); setMsg(''); stable(ch); } catch (e) { fail(ch, e.message); } }, function (e) { fail(ch, 'prepare ' + e); });
       } catch (e) { fail(ch, e.message || String(e)); }
     } else {
       document.body.classList.add('html5');
-      var v = $('vid'); v.src = u; v.onerror = function () { fail(ch, 'video error'); }; v.onplaying = function () { setMsg(''); };
+      var v = $('vid'); v.src = u; v.onerror = function () { fail(ch, 'video error'); }; v.onplaying = function () { setMsg(''); stable(ch); };
       var pr = v.play(); if (pr && pr.catch) pr.catch(function () {});
     }
   }
@@ -325,7 +333,7 @@
     window.addEventListener('unload', leave);
     var saved = localStorage.getItem(STORE) || window.WBTV_DEFAULT;
     if (saved) {
-      S.server = normServer(saved);
+      S.server = normServer(saved); S.key = localStorage.getItem(STORE_KEY) || keyOf(saved);
       load().then(showGuide).catch(function (e) { showSetup('Could not connect to ' + S.server + ': ' + e.message); });
     } else showSetup('');
     setInterval(function () { if (S.mode === 'guide') paintGuide(); }, 30000);
