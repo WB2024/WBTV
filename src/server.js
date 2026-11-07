@@ -221,7 +221,7 @@ app.get('/api/scan', () => {
 function safePath(p) {
   if (!p) return null;
   const real = path.resolve(p);
-  return cfg.browseRoots.some((r) => real === r || real.startsWith(r + path.sep)) ? real : null;
+  return cfg.browseRoots.some((r) => real === r || real.startsWith(r.endsWith(path.sep) ? r : r + path.sep)) ? real : null; // a root of "/" already ends in the separator
 }
 app.get('/api/browse', async (req, reply) => {
   if (!req.query.path) return { path: '', parent: null, dirs: cfg.browseRoots.filter((r) => fs.existsSync(r)).map((r) => ({ name: r, path: r })) };

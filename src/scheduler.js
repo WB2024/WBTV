@@ -68,7 +68,10 @@ function makePicker(db, ch, items, settings) {
     const pool = ids.length > 1 ? ids.filter((k) => k !== lastShow) : ids;
     const k = pickWeighted(pool, (id) => wOf(shows.get(id)[0], ts));
     const eps = shows.get(k);
-    const idx = lastIdx.has(k) ? (lastIdx.get(k) + 1) % eps.length : Math.floor(Math.random() * eps.length);
+    let idx;
+    if (k === 0 && eps.length > 1) { // films mixed into a show channel (a channel group): no episode order, so pick one at random and never the one just played
+      do idx = Math.floor(Math.random() * eps.length); while (idx === lastIdx.get(0));
+    } else idx = lastIdx.has(k) ? (lastIdx.get(k) + 1) % eps.length : Math.floor(Math.random() * eps.length);
     lastIdx.set(k, idx);
     lastShow = k;
     return eps[idx];
@@ -240,6 +243,8 @@ const ROTATION = 30 * 60; // music/radio: one guide entry per half hour of non-s
  * rotation made of many tracks (one block per track), so the guide stays readable and the stream shows what is playing.
  */
 function extendRotation(db, ch, items, t, horizon) {
+  items = items.filter((i) => i.runtime >= 1); // a zero-length file would otherwise add thousands of blocks to fill the half hour
+  if (!items.length) return;
   const recent = db.prepare("SELECT item_id FROM blocks WHERE channel_id=? AND kind='content' ORDER BY start DESC LIMIT 400").all(ch.id).map((r) => r.item_id).reverse();
   const byId = new Map(items.map((i) => [i.id, i]));
   const insProg = db.prepare('INSERT INTO programmes(channel_id,item_id,start,end) VALUES(?,?,?,?)');

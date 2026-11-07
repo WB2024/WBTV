@@ -110,3 +110,19 @@ test('a channel remembers the channel group its programmes come from (the guide 
   assert.equal(g('movie:genre:comedy'), null); // a genre channel made only from ungrouped libraries
   assert.ok(channels().length >= 2);
 });
+
+test('films in a mixed films-and-shows channel are not aired in file-name order', async () => {
+  const { ensureChannelSchedule } = await import('../src/scheduler.js');
+  const { lib, movie, show, db } = fresh();
+  const films = lib('Mix Films', 'movies', 'Mix', 'single'), shows = lib('Mix Shows', 'tv', 'Mix', 'single');
+  for (let i = 1; i <= 8; i++) movie(films, `Film ${i}`);
+  show(shows, 'A Show');
+  inferChannels(db);
+  const ch = db.prepare("SELECT id FROM channels WHERE key='group:mix'").get();
+  ensureChannelSchedule(db, ch.id, 1_800_000_000);
+  const seq = db.prepare("SELECT i.title, i.show_id FROM programmes p JOIN items i ON i.id=p.item_id WHERE p.channel_id=? ORDER BY p.start").all(ch.id).filter((r) => r.show_id == null).map((r) => Number(r.title.replace('Film ', '')));
+  assert.ok(seq.length >= 8, 'films were scheduled');
+  const inOrder = seq.every((n, i) => i === 0 || n === (seq[i - 1] % 8) + 1);
+  assert.equal(inOrder, false, 'alphabetical run: ' + seq.join(','));
+  assert.ok(seq.every((n, i) => i === 0 || n !== seq[i - 1]), 'never the same film twice in a row');
+});

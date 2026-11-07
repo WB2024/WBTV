@@ -112,3 +112,9 @@ test('item paths never contain the key; it is added only when a stream URL is ne
   assert.equal(u, `${base}/Videos/e1/stream?static=true&MediaSourceId=e1&ApiKey=goodkey&api_key=goodkey`);
   assert.equal(resolveMedia(db, '/mnt/tv/a.mkv'), '/mnt/tv/a.mkv'); // plain files pass through
 });
+
+test('log lines never carry a media server key, in either spelling', async () => {
+  const { hideKeys } = await import('../src/broadcaster.js');
+  const out = hideKeys('ffmpeg -i http://h/Videos/1/stream?static=true&ApiKey=SECRET1&api_key=SECRET2 -f x');
+  assert.ok(!/SECRET/.test(out), out);
+});

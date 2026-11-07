@@ -37,7 +37,7 @@ async function serverLyrics(db, stored) {
   return r.text ? parseLyrics(r.text) : null;
 }
 // media-server stream URLs carry the API key (Jellyfin) or the token and salt (Navidrome / Subsonic): never write them to the logs
-const hideKeys = (s) => String(s).replace(/api_key=[^&\s'"]+/g, 'api_key=***').replace(/([?&])(t|s)=[0-9a-f]{8,}/g, '$1$2=***');
+export const hideKeys = (s) => String(s).replace(/(api_?key)=[^&\s'"]+/gi, '$1=***').replace(/([?&])(t|s)=[0-9a-f]{8,}/g, '$1$2=***');
 
 /**
  * One Broadcaster per watched channel. It walks the persisted schedule in real time and
