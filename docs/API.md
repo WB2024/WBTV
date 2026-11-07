@@ -11,6 +11,11 @@ Off by default. When you set a password (Setup > Settings > Security) every endp
 
 A missing or wrong credential returns `401 {"error":"login required"}`.
 
+## Good to know
+
+- JSON answers over about 1.4 KB are gzipped for clients that send `Accept-Encoding: gzip` (the guide shrinks about 20 times). Browsers, Android and most HTTP libraries do this on their own.
+- `GET` requests to `/api/*` and `/live/*` carry `Access-Control-Allow-Origin: *`, so a page served from another origin (the Samsung TizenBrew route) can read the guide and streams. Nothing that changes data is opened up.
+
 | Method & path | Notes |
 |---|---|
 | `GET /healthz` | Always open. `{ok:true}` |
