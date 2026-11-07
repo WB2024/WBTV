@@ -251,7 +251,7 @@ Music videos from YouTube usually carry an upload date as their "year" and a mes
 
 WBTV can read your library two ways, and you can mix them. **Folders are the default and the best-tested route.** Reading from a media server is an option for when folders aren't practical. Neither is "better" in general, so here is an honest comparison to help you choose.
 
-| | **Folders (direct)** | **Media server (Jellyfin / Emby for TV and films, Navidrome for music)** |
+| | **Folders (direct)** | **Media server (Jellyfin / Emby for TV, films and music videos, Navidrome for music)** |
 |---|---|---|
 | **How it plays** | ffmpeg reads each file straight from disk | ffmpeg reads the original over HTTP from the server (no transcoding on the server's side) |
 | **Start-up speed** | Fastest: seeking is local | A little slower, because every piece goes through the server. Not measured on every setup, so test with your own |

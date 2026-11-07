@@ -127,8 +127,8 @@ app.post('/api/libraries', async (req, reply) => {
   const { path: p, type, name } = req.body || {};
   if (req.body?.sourceId) { // one view (library) of a Jellyfin / Emby server
     const src = db.prepare('SELECT id,name,kind FROM sources WHERE id=?').get(Number(req.body.sourceId));
-    const allowed = src?.kind === 'navidrome' ? ['radio'] : ['tv', 'movies'];
-    if (!src || !req.body.viewId || !allowed.includes(type)) return reply.code(400).send({ error: 'choose a server, a library and a type (Jellyfin / Emby: TV shows or Movies; Navidrome: music)' });
+    const allowed = src?.kind === 'navidrome' ? ['radio'] : ['tv', 'movies', 'music'];
+    if (!src || !req.body.viewId || !allowed.includes(type)) return reply.code(400).send({ error: 'choose a server, a library and a type (Jellyfin / Emby: TV shows, Movies or Music videos; Navidrome: music)' });
     try {
       const r = db.prepare('INSERT INTO libraries(name,path,type) VALUES(?,?,?)').run(name || `${src.name}`, `ms://${src.id}/${String(req.body.viewId).replace(/[^\w-]/g, '')}`, type);
       const id = Number(r.lastInsertRowid);

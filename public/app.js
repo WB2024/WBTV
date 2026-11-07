@@ -499,7 +499,7 @@ function addMediaServerForm(onAdded) {
       const nav = kind.value === 'navidrome';
       const d = await api('/api/sources', { method: 'POST', body: nav ? { kind: 'navidrome', url: url.value, username: user.value, password: pass.value } : { url: url.value, token: key.value } });
       key.value = ''; pass.value = ''; // the password is only used to log in once; WBTV keeps a token, not the password
-      const label = (v) => (v.type === 'tv' ? 'TV shows' : v.type === 'radio' ? 'Music, as radio stations' : 'Movies');
+      const label = (v) => (v.type === 'tv' ? 'TV shows' : v.type === 'radio' ? 'Music, as radio stations' : v.type === 'music' ? 'Music videos' : 'Movies');
       out.replaceChildren(h('div', { class: 'note' }, `Connected to ${d.name} (${d.product} ${d.version}). Add the libraries you want:`),
         d.views.length ? d.views.map((v) => h('div', { class: 'row2' }, h('span', { style: 'width:300px' }, `${v.name} (${label(v)})`),
           h('button', { onclick: async (e) => {

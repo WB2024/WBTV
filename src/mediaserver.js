@@ -19,12 +19,18 @@ export function normalizeUrl(u) {
   try { const x = new URL(s); return `${x.protocol}//${x.host}`; } catch { return ''; }
 }
 
+/** Jellyfin 12 removed X-Emby-Token and ?api_key=; it wants  Authorization: MediaBrowser Token="..."  (and ?ApiKey= in a URL). Emby still uses the old ones. */
+const isEmby = (src) => src.kind === 'emby';
+const authHeaders = (src) => (isEmby(src) ? { 'X-Emby-Token': src.token || '' } : { Authorization: `MediaBrowser Client="WBTV", Device="WBTV", DeviceId="wbtv", Version="1", Token="${String(src.token || '').replace(/[^\w.-]/g, '')}"` });
+/** ffmpeg cannot be given a header per request here, so a stream URL carries the key in the query: both spellings for Jellyfin (older and 12+), api_key for Emby. */
+const keyQuery = (src) => (isEmby(src) ? `api_key=${encodeURIComponent(src.token || '')}` : `ApiKey=${encodeURIComponent(src.token || '')}&api_key=${encodeURIComponent(src.token || '')}`);
+
 async function api(src, pathAndQuery, { timeout = 30000, binary = false } = {}) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeout);
   let r;
   try {
-    r = await fetch(src.url + pathAndQuery, { headers: { 'X-Emby-Token': src.token || '', Accept: binary ? '*/*' : 'application/json' }, signal: ctl.signal });
+    r = await fetch(src.url + pathAndQuery, { headers: { ...authHeaders(src), Accept: binary ? '*/*' : 'application/json' }, signal: ctl.signal });
   } catch (e) {
     throw new Error(e?.name === 'AbortError' ? 'the server did not answer in time' : `could not reach ${src.url} (${e?.cause?.code || e?.message || e})`);
   } finally { clearTimeout(t); }
@@ -37,7 +43,8 @@ async function api(src, pathAndQuery, { timeout = 30000, binary = false } = {}) 
 export async function discover(url, token, userId) {
   const src = { url: normalizeUrl(url), token: String(token || '').trim() };
   if (!src.url) throw new Error('enter the server address, for example 192.168.1.111:8096');
-  const info = await api(src, '/System/Info/Public').catch((e) => { throw e; });
+  const info = await api(src, '/System/Info/Public');
+  src.kind = /emby/i.test(info.ProductName || '') ? 'emby' : 'jellyfin';
   if (!src.token) throw new Error('enter an API key (Jellyfin: Dashboard > API Keys)');
   const users = (await api(src, '/Users')).map((u) => ({ id: u.Id, name: u.Name, admin: !!u.Policy?.IsAdministrator }));
   if (!users.length) throw new Error('the server has no users');
@@ -45,7 +52,7 @@ export async function discover(url, token, userId) {
   const views = (await api(src, `/Users/${uid}/Views`)).Items || [];
   return {
     url: src.url, name: info.ServerName || 'Media server', product: info.ProductName || 'Media server', version: info.Version || '', users, userId: uid,
-    views: views.filter((v) => ['movies', 'tvshows'].includes(v.CollectionType)).map((v) => ({ id: v.Id, name: v.Name, type: v.CollectionType === 'tvshows' ? 'tv' : 'movies' })),
+    views: views.filter((v) => ['movies', 'tvshows', 'musicvideos'].includes(v.CollectionType)).map((v) => ({ id: v.Id, name: v.Name, type: v.CollectionType === 'tvshows' ? 'tv' : v.CollectionType === 'musicvideos' ? 'music' : 'movies' })),
   };
 }
 
@@ -74,11 +81,11 @@ export function resolveMedia(db, p) {
   const src = getSource(db, r.source);
   if (!src) return p; // the source was removed: ffmpeg will fail on it and the broadcaster shows the test card
   if (src.kind === 'navidrome') return navStream(src, r.ref);
-  return `${src.url}/Videos/${encodeURIComponent(r.ref)}/stream?static=true&MediaSourceId=${encodeURIComponent(r.ref)}&api_key=${encodeURIComponent(src.token || '')}`;
+  return `${src.url}/Videos/${encodeURIComponent(r.ref)}/stream?static=true&MediaSourceId=${encodeURIComponent(r.ref)}&${keyQuery(src)}`;
 }
 
 // ---- scanning -----------------------------------------------------------------------------------------------------------------
-const FIELDS = 'Overview,Genres,Studios,People,OfficialRating,CommunityRating,ProductionYear,PremiereDate,RunTimeTicks,DateLastSaved,SeriesId,SeriesName,ParentIndexNumber,IndexNumber';
+const FIELDS = 'Overview,Genres,Studios,People,OfficialRating,CommunityRating,ProductionYear,PremiereDate,RunTimeTicks,DateLastSaved,SeriesId,SeriesName,ParentIndexNumber,IndexNumber,Artists,AlbumArtist,Album';
 const covers = () => path.join(cfg.configDir, 'covers');
 const coverFile = (srcId, id) => path.join(covers(), `ms_${srcId}_${String(id).replace(/[^\w-]/g, '')}.jpg`);
 const jsonArr = (a) => JSON.stringify(a || []);
@@ -104,10 +111,10 @@ export async function scanMediaServer(db, lib, progress, { safeRemovals }) {
   if (src.kind === 'navidrome') return scanNavidrome(db, lib, src, view, progress, { safeRemovals });
   const uid = src.user_id;
   const base = `/Users/${uid}/Items?ParentId=${encodeURIComponent(view)}&Recursive=true&Fields=${FIELDS}`;
-  const tv = lib.type === 'tv';
+  const tv = lib.type === 'tv', mv = lib.type === 'music'; // mv: a "Music Videos" library
   // read everything first: a server that is down must not look like a library that was emptied
   const series = tv ? await pages(src, base + '&IncludeItemTypes=Series') : [];
-  const items = await pages(src, base + `&IncludeItemTypes=${tv ? 'Episode' : 'Movie'}`);
+  const items = await pages(src, base + `&IncludeItemTypes=${tv ? 'Episode' : mv ? 'MusicVideo' : 'Movie'}`);
   progress.files = items.length;
 
   const existing = new Map(db.prepare('SELECT path,mtime,size FROM items WHERE library_id=?').all(lib.id).map((r) => [r.path, r]));
@@ -135,10 +142,10 @@ export async function scanMediaServer(db, lib, progress, { safeRemovals }) {
   const seen = new Set();
   const upsert = db.prepare(`INSERT INTO items
     (library_id,show_id,kind,path,title,plot,year,season,episode,aired,rating,mpaa,runtime,probed,studios,genres,actors,poster,mtime,size,nfo_mtime,artist,album)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,NULL,NULL,NULL)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,NULL,?,?)
     ON CONFLICT(path) DO UPDATE SET show_id=excluded.show_id,kind=excluded.kind,title=excluded.title,plot=excluded.plot,year=excluded.year,season=excluded.season,
       episode=excluded.episode,aired=excluded.aired,rating=excluded.rating,mpaa=excluded.mpaa,runtime=excluded.runtime,probed=1,studios=excluded.studios,
-      genres=excluded.genres,actors=excluded.actors,poster=excluded.poster,mtime=excluded.mtime,size=excluded.size`);
+      genres=excluded.genres,actors=excluded.actors,poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,artist=excluded.artist,album=excluded.album`);
   tx(db, () => {
     for (const it of items) {
       const runtime = secs(it.RunTimeTicks);
@@ -152,15 +159,16 @@ export async function scanMediaServer(db, lib, progress, { safeRemovals }) {
         aired: (it.PremiereDate || '').slice(0, 10) || null, rating: it.CommunityRating ?? null, mpaa: it.OfficialRating || '', studios: (it.Studios || []).map((x) => x.Name), genres: it.Genres || [],
         actors: (it.People || []).filter((x) => !x.Type || x.Type === 'Actor').slice(0, 15).map((x) => ({ name: x.Name, role: x.Role || '' })),
       };
-      const sig = hash([meta, runtime]);
+      const artist = mv ? (it.Artists?.[0] || it.AlbumArtist || '') : null, album = mv ? it.Album || '' : null;
+      const sig = hash([meta, runtime, artist, album]);
       const mtime = Date.parse(it.DateLastSaved || '') || 0;
       const ex = existing.get(p);
       const art = poster(it.Id);
       if (!art) want.push(it.Id);
       if (ex && ex.mtime === mtime && ex.size === sig) { if (art) db.prepare('UPDATE items SET poster=? WHERE path=?').run(art, p); continue; }
       progress.changed++;
-      upsert.run(lib.id, show, tv ? 'episode' : 'movie', p, meta.title, meta.plot, meta.year, meta.season, meta.episode, meta.aired, meta.rating, meta.mpaa, runtime,
-        jsonArr(meta.studios), jsonArr(meta.genres), JSON.stringify(meta.actors), art, mtime, sig);
+      upsert.run(lib.id, show, tv ? 'episode' : mv ? 'musicvideo' : 'movie', p, meta.title, meta.plot, meta.year, meta.season, meta.episode, meta.aired, meta.rating, meta.mpaa, runtime,
+        jsonArr(meta.studios), jsonArr(meta.genres), JSON.stringify(meta.actors), art, mtime, sig, artist, album);
     }
   });
 

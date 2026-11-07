@@ -103,7 +103,7 @@ The complete feature list, by area. For what's new in each version see the [rele
 
 ## Jellyfin and Emby as a source
 
-- Setup > Libraries > *Read TV and films from Jellyfin / Emby*: enter the server address and an API key (Jellyfin: Dashboard > API Keys), then add the TV and movie libraries you want.
+- Setup > Libraries > *Read TV, films and music videos from Jellyfin / Emby*: enter the server address and an API key (Jellyfin: Dashboard > API Keys), then add the TV, movie and music-video libraries you want. Works with Jellyfin 12 (which dropped the old `X-Emby-Token` / `api_key`) and with older Jellyfin and Emby.
 - Titles, plots, studios, genres, ratings, cast and pictures come from the server, so channels are inferred exactly as from folders (a studio becomes a channel, a genre a themed one). Folder and server libraries can be mixed.
 - Playback reads the original files from the server over HTTP; the API key is kept on the WBTV server, is never put in an item path, and is hidden from logs.
 - If the server is down during a scan, nothing is removed. Pictures are downloaded a few hundred at a time per scan.

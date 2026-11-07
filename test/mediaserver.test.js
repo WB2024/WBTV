@@ -19,7 +19,7 @@ const server = http.createServer((req, res) => {
   const json = (o, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
   if (down) { res.destroy(); return; }
   if (u.pathname === '/System/Info/Public') return json({ ServerName: 'Test Jelly', ProductName: 'Jellyfin Server', Version: '10.9.0' });
-  if (req.headers['x-emby-token'] !== 'goodkey') return json({}, 401);
+  if (!/Token="goodkey"/.test(req.headers.authorization || '')) return json({}, 401); // Jellyfin 12: only the MediaBrowser Authorization header
   if (u.pathname === '/Users') return json([{ Id: 'u1', Name: 'will', Policy: { IsAdministrator: true } }]);
   if (u.pathname === '/Users/u1/Views') return json({ Items: [{ Id: 'tvview', Name: 'Shows', CollectionType: 'tvshows' }, { Id: 'mview', Name: 'Films', CollectionType: 'movies' }, { Id: 'music', Name: 'Music', CollectionType: 'music' }] });
   if (u.pathname === '/Users/u1/Items') {
@@ -109,6 +109,6 @@ test('item paths never contain the key; it is added only when a stream URL is ne
   assert.ok(isRemote('ms://1/e1'));
   assert.deepEqual(parseRemote('ms://1/e1'), { source: 1, ref: 'e1' });
   const u = resolveMedia(db, 'ms://1/e1');
-  assert.equal(u, `${base}/Videos/e1/stream?static=true&MediaSourceId=e1&api_key=goodkey`);
+  assert.equal(u, `${base}/Videos/e1/stream?static=true&MediaSourceId=e1&ApiKey=goodkey&api_key=goodkey`);
   assert.equal(resolveMedia(db, '/mnt/tv/a.mkv'), '/mnt/tv/a.mkv'); // plain files pass through
 });
