@@ -219,7 +219,7 @@ app.get('/api/scan', () => {
 
 // folder browser (restricted to WBTV_BROWSE_ROOTS)
 function safePath(p) {
-  if (!p) return null;
+  if (!p || typeof p !== 'string') return null;
   const real = path.resolve(p);
   return cfg.browseRoots.some((r) => real === r || real.startsWith(r.endsWith(path.sep) ? r : r + path.sep)) ? real : null; // a root of "/" already ends in the separator
 }
@@ -274,7 +274,7 @@ app.delete('/api/channels', async () => { // every empty (non-live) channel
 app.patch('/api/channels/:id', async (req) => {
   const { name, number, enabled } = req.body || {};
   const id = req.params.id;
-  if (name !== undefined) db.prepare('UPDATE channels SET name_override=? WHERE id=?').run(name && name.trim() ? name.trim() : null, id);
+  if (name !== undefined && (name === null || typeof name === 'string')) db.prepare('UPDATE channels SET name_override=? WHERE id=?').run(name && name.trim() ? name.trim().slice(0, 80) : null, id);
   if (number !== undefined && Number.isInteger(number) && number > 0) {
     db.prepare('UPDATE channels SET number=NULL WHERE number=? AND id<>?').run(number, id); // swap-free: last write wins
     db.prepare('UPDATE channels SET number=? WHERE id=?').run(number, id);

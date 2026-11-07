@@ -61,7 +61,7 @@ export function initAuth(app, db) {
 
   // the hook above already requires a login for everything below once a password exists
   app.post('/api/auth/password', async (req, reply) => {
-    const pw = String(req.body?.password ?? '');
+    const pw = typeof req.body?.password === 'string' ? req.body.password : '';
     if (pw.length < 4) return reply.code(400).send({ error: 'Use at least 4 characters' });
     const salt = rand(16);
     auth = { salt, hash: hashPw(pw, salt), apiKey: auth?.apiKey || rand(24), secret: rand(32) };
