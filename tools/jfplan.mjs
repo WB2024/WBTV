@@ -13,7 +13,7 @@ const GROUPS = [[/stand\s*up/i, 'Stand Up'], [/live music/i, 'Live Music'], [/mu
 const TYPE = { movies: 'movies', tvshows: 'tv', homevideos: 'clips' };
 const mapPath = (p) => (p.startsWith(MAP[0] + '/') ? MAP[1] + p.slice(MAP[0].length) : null);
 
-const jf = await (await fetch(`${JF}/Library/VirtualFolders`, { headers: { 'X-Emby-Token': KEY } })).json();
+const jf = await (await fetch(`${JF}/Library/VirtualFolders`, { headers: { Authorization: `MediaBrowser Client="WBTV", Device="jfplan", DeviceId="jfplan", Version="1", Token="${KEY}"`, 'X-Emby-Token': KEY } })).json();
 const mine = await (await fetch(`${WBTV}/api/libraries`)).json();
 const plan = { add: [], update: [], overlaps: [], skipped: [] };
 for (const lib of jf) {
