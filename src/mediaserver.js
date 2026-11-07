@@ -146,6 +146,7 @@ export async function scanMediaServer(db, lib, progress, { safeRemovals }) {
     ON CONFLICT(path) DO UPDATE SET show_id=excluded.show_id,kind=excluded.kind,title=excluded.title,plot=excluded.plot,year=excluded.year,season=excluded.season,
       episode=excluded.episode,aired=excluded.aired,rating=excluded.rating,mpaa=excluded.mpaa,runtime=excluded.runtime,probed=1,studios=excluded.studios,
       genres=excluded.genres,actors=excluded.actors,poster=excluded.poster,mtime=excluded.mtime,size=excluded.size,artist=excluded.artist,album=excluded.album`);
+  const setPoster = db.prepare('UPDATE items SET poster=? WHERE path=?');
   tx(db, () => {
     for (const it of items) {
       const runtime = secs(it.RunTimeTicks);
@@ -165,7 +166,7 @@ export async function scanMediaServer(db, lib, progress, { safeRemovals }) {
       const ex = existing.get(p);
       const art = poster(it.Id);
       if (!art) want.push(it.Id);
-      if (ex && ex.mtime === mtime && ex.size === sig) { if (art) db.prepare('UPDATE items SET poster=? WHERE path=?').run(art, p); continue; }
+      if (ex && ex.mtime === mtime && ex.size === sig) { if (art) setPoster.run(art, p); continue; }
       progress.changed++;
       upsert.run(lib.id, show, tv ? 'episode' : mv ? 'musicvideo' : 'movie', p, meta.title, meta.plot, meta.year, meta.season, meta.episode, meta.aired, meta.rating, meta.mpaa, runtime,
         jsonArr(meta.studios), jsonArr(meta.genres), JSON.stringify(meta.actors), art, mtime, sig, artist, album);

@@ -110,6 +110,7 @@ export async function scanNavidrome(db, lib, src, view, progress, { safeRemovals
     VALUES (?,NULL,'track',?,?,'',?,NULL,NULL,NULL,NULL,'',?,1,'[]',?,'[]',?,1,?,NULL,?,?)
     ON CONFLICT(path) DO UPDATE SET title=excluded.title,year=excluded.year,runtime=excluded.runtime,probed=1,genres=excluded.genres,poster=excluded.poster,
       mtime=1,size=excluded.size,artist=excluded.artist,album=excluded.album`);
+  const setPoster = db.prepare('UPDATE items SET poster=? WHERE path=?');
   tx(db, () => {
     for (const s of songs) {
       const runtime = Number(s.duration) || 0;
@@ -123,7 +124,7 @@ export async function scanNavidrome(db, lib, src, view, progress, { safeRemovals
       const picture = art(s);
       if (s.coverArt && !picture) want.push(s.coverArt);
       const ex = existing.get(p);
-      if (ex && ex.size === sig) { if (picture) db.prepare('UPDATE items SET poster=? WHERE path=?').run(picture, p); continue; }
+      if (ex && ex.size === sig) { if (picture) setPoster.run(picture, p); continue; }
       progress.changed++;
       upsert.run(lib.id, p, s.title || path.parse(String(s.path || s.id)).name, year, runtime, JSON.stringify(genres), picture, sig, s.artist || s.displayArtist || '', s.album || '');
     }
@@ -138,8 +139,8 @@ export async function scanNavidrome(db, lib, src, view, progress, { safeRemovals
 async function fetchCovers(db, src, lib, songs, ids) {
   if (!ids.length) return;
   fs.mkdirSync(covers(), { recursive: true });
-  const pathsFor = new Map();
-  for (const s of songs) if (s.coverArt && ids.includes(s.coverArt)) (pathsFor.get(s.coverArt) || pathsFor.set(s.coverArt, []).get(s.coverArt)).push(`ms://${src.id}/${s.id}`);
+  const pathsFor = new Map(), wanted = new Set(ids); // a Set: a big library has 100,000 songs to check against a few hundred pictures
+  for (const s of songs) if (s.coverArt && wanted.has(s.coverArt)) (pathsFor.get(s.coverArt) || pathsFor.set(s.coverArt, []).get(s.coverArt)).push(`ms://${src.id}/${s.id}`);
   const set = db.prepare('UPDATE items SET poster=? WHERE path=? AND library_id=?');
   let i = 0;
   await Promise.all(Array.from({ length: 4 }, async () => {

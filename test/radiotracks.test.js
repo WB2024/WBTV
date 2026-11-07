@@ -26,3 +26,21 @@ test('radio: a repeated song is played once, junk and hour-long tracks are left 
   assert.deepEqual(ch.map((c) => c.key), ['radio:genre:rock box']);
   assert.equal(ch[0].item_count, 20);
 });
+
+test('an artist that is a number ("311") is not re-read from disk on every scan', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+  const { openDb } = await import('../src/db.js');
+  const { scanLibrary } = await import('../src/scanner.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wbtv-num-'));
+  const db = openDb(fs.mkdtempSync(path.join(os.tmpdir(), 'wbtv-numdb-')));
+  fs.writeFileSync(path.join(dir, 'down.mp3'), ''); // present but unreadable as audio: seen by the scan, never removed, never re-tagged
+  const libId = Number(db.prepare("INSERT INTO libraries(name,path,type) VALUES('R',?,'radio')").run(dir).lastInsertRowid);
+  db.prepare("INSERT INTO items(library_id,kind,path,title,runtime,probed,artist,mtime,size) VALUES(?,'track',?, 'Down', 200, 1, '311', 5, 5)").run(libId, path.join(dir, 'down.mp3'));
+  const lib = db.prepare('SELECT * FROM libraries WHERE id=?').get(libId);
+  const prog = () => ({ files: 0, dirs: 0, changed: 0 });
+  await scanLibrary(db, lib, prog());
+  assert.equal(db.prepare('SELECT mtime FROM items WHERE library_id=?').get(libId).mtime, 0, 'the old numeric-artist mix-up is healed once');
+  db.prepare('UPDATE items SET mtime=5 WHERE library_id=?').run(libId);
+  await scanLibrary(db, lib, prog());
+  assert.equal(db.prepare('SELECT mtime FROM items WHERE library_id=?').get(libId).mtime, 5, 'and not again on the next scan');
+});

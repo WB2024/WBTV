@@ -237,7 +237,12 @@ const num = (s) => { const n = parseInt(String(s || '').split('/')[0], 10); retu
  */
 async function scanRadio(db, lib, progress) {
   // self-heal: an earlier parser took the track number of "14 - Artist. Title" for the artist; re-read those few rows
-  db.prepare("UPDATE items SET mtime=0 WHERE library_id=? AND kind='track' AND artist GLOB '[0-9]*' AND artist NOT GLOB '*[^0-9]*'").run(lib.id);
+  // (once per library: an artist that really is a number, such as "311", would otherwise be re-read from disk on every scan)
+  const healKey = `heal_numeric_artist_${lib.id}`;
+  if (!db.prepare('SELECT 1 FROM settings WHERE key=?').get(healKey)) {
+    db.prepare("UPDATE items SET mtime=0 WHERE library_id=? AND kind='track' AND artist GLOB '[0-9]*' AND artist NOT GLOB '*[^0-9]*'").run(lib.id);
+    db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run(healKey, '1');
+  }
   db.prepare("UPDATE items SET mtime=0 WHERE library_id=? AND kind IN ('track','talk') AND year IS NOT NULL AND year<1900").run(lib.id); // junk dates such as 0001-01-01
   const talk = TALK[lib.type] || null;
   const kind = talk ? 'talk' : 'track';
