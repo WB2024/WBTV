@@ -156,7 +156,7 @@ Rename, renumber or switch off anything in **Setup**. Your edits survive rescans
 - 🔌 **Tuner output**: HDHomeRun emulation, an **M3U playlist** and **XMLTV guide** for Plex, Jellyfin, Emby, TiviMate, VLC, Kodi and more
 - 🗄️ **Jellyfin, Emby and Navidrome as a source**: connect with an API key (or a Navidrome login) and WBTV builds channels from those libraries too. Folders still work and you can mix both: [which is better for you?](#folders-or-a-media-server)
 - 🌐 **Live TV**: add any M3U/M3U8 playlist, HLS stream, or YouTube live link
-- 📱 **Native Android TV / Fire TV app** (Kotlin, Compose, Media3) with a full on-TV settings screen, and a **[Samsung (Tizen) TV app](#samsung-tv-app)**
+- 📱 **Native Android TV / Fire TV app** (Kotlin, Compose, Media3) with a full on-TV settings screen, and a **[Samsung (Tizen) TV app](#samsung-tv-app)**, plus a **[desktop client](desktop/README.md)** for Windows and Linux
 - 🔒 **Optional password and access key**, and a documented [HTTP API](docs/API.md)
 - ⚡ **Hardware encoding** (Intel/AMD VAAPI, NVIDIA NVENC) with an automatic self-test and CPU fallback
 
@@ -461,6 +461,7 @@ src/         Node.js server: scanner, channel inference, scheduler, live HLS bro
 public/      Web UI (vanilla JS)
 android/     Android TV app (Kotlin, Compose, Media3); unit tests: ./gradlew testDebugUnitTest
 tizen/       Samsung (Tizen) TV app (plain JavaScript, no build step)
+desktop/     Windows and Linux desktop client (Electron window around the web UI)
 tools/       Command-line helpers, including mvdl.py, the music video downloader
 docs/        API reference, full feature list, comparison with other tools
 test/        Unit tests (npm test)

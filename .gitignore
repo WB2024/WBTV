@@ -7,3 +7,6 @@ config/
 .env
 .env.*
 !.env.example
+
+desktop/node_modules/
+desktop/dist/

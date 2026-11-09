@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8"><title>WBTV</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+  body{margin:0;height:100vh;display:grid;place-items:center;background:#0b0d12;color:#e8eaf0;font:16px system-ui,sans-serif}
+  form{width:min(420px,90vw);display:grid;gap:12px}
+  h1{margin:0 0 4px;font-size:28px;letter-spacing:.04em} p{margin:0;color:#9aa3b5;font-size:14px;line-height:1.5}
+  input,button{font:inherit;padding:12px 14px;border-radius:8px;border:1px solid #2a3040;background:#151a24;color:inherit}
+  button{background:#3b82f6;border-color:#3b82f6;cursor:pointer;font-weight:600} #err{color:#f87171;min-height:1.2em;font-size:14px}
+</style>
+<form id="f">
+  <h1>WBTV</h1>
+  <p>Enter your server's address, for example <b>192.168.1.110:8420</b>. If it has a password, add the access key: <b>192.168.1.110:8420?key=YOURKEY</b>.</p>
+  <input id="a" autofocus placeholder="192.168.1.110:8420" spellcheck="false">
+  <button>Connect</button><div id="err"></div>
+</form>
+<script>
+  const a = document.getElementById('a'), err = document.getElementById('err');
+  wbtvDesktop.current().then((v) => { if (v) a.value = v; });
+  document.getElementById('f').onsubmit = async (e) => {
+    e.preventDefault(); err.textContent = 'Connecting…';
+    const r = await wbtvDesktop.connect(a.value);
+    if (r && r.error) err.textContent = r.error;
+  };
+</script>
