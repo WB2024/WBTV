@@ -4,6 +4,7 @@
   "description": "WBTV desktop client: your WBTV server's channels in a window",
   "main": "main.js",
   "private": true,
+  "homepage": "https://github.com/WB2024/WBTV",
   "author": "WB2024",
   "license": "MIT",
   "scripts": {
