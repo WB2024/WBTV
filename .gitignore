@@ -10,3 +10,8 @@ config/
 
 desktop/node_modules/
 desktop/dist/
+
+# python bytecode from the tools/ helpers: a cache, never a source file
+__pycache__/
+*.pyc
+
